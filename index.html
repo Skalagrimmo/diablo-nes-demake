@@ -27,7 +27,7 @@
 <div class="scan"></div>
 </div>
 <div class="hint">
-  <kbd>←→↑↓</kbd>/<kbd>WASD</kbd> рух &nbsp; <kbd>Z</kbd>/<kbd>Space</kbd> атака &nbsp; <kbd>X</kbd> зілля &nbsp; <kbd>Enter</kbd> старт / далі &nbsp; <kbd>M</kbd> звук<br>
+  <kbd>←→↑↓</kbd>/<kbd>WASD</kbd> рух &nbsp; <kbd>Z</kbd>/<kbd>Space</kbd> атака &nbsp; <kbd>X</kbd> зілля &nbsp; <kbd>E</kbd> дія / сходи &nbsp; <kbd>Enter</kbd> старт / далі &nbsp; <kbd>M</kbd> звук<br>
   Клікніть по екрану, щоб активувати звук. Демейк Diablo (1996) під залізо NES: 256×240, світло через «attribute table», катсцени в дусі Ninja Gaiden.
 </div>
 <div class="touch-controls" aria-label="Сенсорне керування">
@@ -40,7 +40,8 @@
   <div class="actions">
     <button type="button" data-key="z" aria-label="Атака" tabindex="-1">A</button>
     <button type="button" data-key="x" aria-label="Зілля" tabindex="-1">B</button>
-    <button type="button" data-key="Enter" aria-label="Підтвердити або продовжити" tabindex="-1">START</button>
+    <button type="button" data-key="e" aria-label="Дія або взаємодія" tabindex="-1">ACT</button>
+  <button type="button" data-key="Enter" aria-label="Підтвердити або продовжити" tabindex="-1">START</button>
   </div>
 </div>
 <script>
@@ -284,7 +285,7 @@ function key(e,down){var k=e.key;
  }else keys[k]=false;}
 function inp(){return{left:keys["ArrowLeft"]||keys["a"]||keys["A"],right:keys["ArrowRight"]||keys["d"]||keys["D"],
  up:keys["ArrowUp"]||keys["w"]||keys["W"],down:keys["ArrowDown"]||keys["s"]||keys["S"],
- a:keys["z"]||keys["Z"]||keys[" "]||keys["j"]||keys["J"],b:keys["x"]||keys["X"]||keys["k"]||keys["K"]}}
+ a:keys["z"]||keys["Z"]||keys[" "]||keys["j"]||keys["J"],b:keys["x"]||keys["X"]||keys["k"]||keys["K"],act:keys["e"]||keys["E"]}}
 function onEnter(){switch(scene){
  case"intro":scene="title";st=0;setMusic("title");break;
  case"title":scene="select";st=0;break;
@@ -304,7 +305,7 @@ document.addEventListener("keydown",function(e){key(e,true)});
 document.addEventListener("keyup",function(e){key(e,false)});
 
 // ---------- Механіка ----------
-function solidPx(x,y){var tx=x/TS|0,ty=y/TS|0;return map.m[ty*MW+tx]!==0}
+function solidPx(x,y){var tx=x/TS|0,ty=y/TS|0,id=map.m[ty*MW+tx];return id!==0&&id!==2}
 function hitWall(x,y,r){return solidPx(x-r,y-r)||solidPx(x+r,y-r)||solidPx(x-r,y+r)||solidPx(x+r,y+r)}
 function tryMove(e,dx,dy,r){if(!hitWall(e.x+dx,e.y,r))e.x+=dx;if(!hitWall(e.x,e.y+dy,r))e.y+=dy}
 function spawnParts(x,y,n,col){for(var i=0;i<n;i++)parts.push({x:x,y:y,
@@ -368,8 +369,9 @@ function updatePlay(dt){var i=inp(),sp=player.cls==="rog"?60:(player.cls==="sor"
  for(i=dnums.length-1;i>=0;i--){var dn=dnums[i];dn.y-=22*dt;dn.life-=dt;if(dn.life<=0)dnums.splice(i,1)}
  if(msg)msg.life-=dt;
  var ptx=player.x/TS|0,pty=player.y/TS|0;
- if(map.stairs&&ptx===map.stairs.x&&pty===map.stairs.y){sfx("stairs");enterFloor(floorN+1);
-  if(floorN===3){scene="butcher";st=0;ev={};setMusic(null)}else setMusic("dungeon");}}
+ if(map.stairs){var sx=map.stairs.x*TS+8,sy=map.stairs.y*TS+8,nearStairs=Math.hypot(player.x-sx,player.y-sy)<18;
+  if(nearStairs&&i.act){sfx("stairs");enterFloor(floorN+1);
+   if(floorN===3){scene="butcher";st=0;ev={};setMusic(null)}else setMusic("dungeon");}}}
 
 // ---------- Рендер ----------
 function drawSpr(img,x,y,flip){x=x|0;y=y|0;
@@ -437,6 +439,7 @@ function drawPlay(){var camX=Math.max(0,Math.min(player.x-W/2,MW*TS-W)),
  ctx.drawImage(potionSpr,108,H-17);text(""+player.pots,118,H-14,P.orange,1);
  text("B"+floorN,228,H-14,P.lgray,1);
  if(msg&&msg.life>0)textC(msg.t,H-34,P.lgray,1);
+ if(map.stairs&&Math.hypot(player.x-(map.stairs.x*TS+8),player.y-(map.stairs.y*TS+8))<18)textC("E: DESCEND",H-34,P.yellow,1);
  if(scene==="dead"){ctx.fillStyle="rgba(0,0,0,0.55)";ctx.fillRect(0,0,W,H);
   textC("YOU HAVE DIED",96,P.red,2);if((gt*2|0)%2)textC("PRESS ENTER",130,P.lgray,1);}
  }
