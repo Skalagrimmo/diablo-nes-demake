@@ -188,6 +188,14 @@ var MON={
  bat:{spr:[mkSpr(batA,MON_MAP),mkSpr(batB,MON_MAP)],hp:1,spd:42,dmg:1,r:5,gold:0.15,pot:0.1},
  skel:{spr:[mkSpr(skelA,MON_MAP),mkSpr(skelB,MON_MAP)],hp:5,spd:20,dmg:2,r:6,gold:0.45,pot:0.1},
  butcher:{spr:[mkSpr(butcherRows,MON_MAP)],hp:60,spd:30,dmg:3,r:11,gold:0,pot:0}};
+function makeDiabloSprite(){var c=document.createElement("canvas");c.width=24;c.height=24;var g=c.getContext("2d");
+ g.fillStyle=P.black;g.fillRect(1,7,6,10);g.fillRect(17,7,6,10);g.fillRect(7,3,3,5);g.fillRect(14,3,3,5);g.fillRect(6,7,12,15);
+ g.fillStyle="#881400";g.fillRect(2,8,5,7);g.fillRect(17,8,5,7);g.fillRect(8,5,2,4);g.fillRect(14,5,2,4);
+ g.fillStyle="#d82800";g.fillRect(7,8,10,11);g.fillRect(5,11,14,7);g.fillRect(8,19,3,4);g.fillRect(13,19,3,4);
+ g.fillStyle="#f8b800";g.fillRect(8,10,2,2);g.fillRect(14,10,2,2);
+ g.fillStyle="#000000";g.fillRect(10,14,4,2);g.fillRect(7,20,4,3);g.fillRect(13,20,4,3);
+ g.fillStyle="#fc9838";g.fillRect(3,11,2,2);g.fillRect(19,11,2,2);return c;}
+var DIABLO_SPR=makeDiabloSprite();
 function mkMonster(kind,x,y){var t=MON[kind];
  return{kind:kind,x:x,y:y,hp:t.hp,maxhp:t.hp,spd:t.spd,dmg:t.dmg,r:t.r,spr:t.spr,
   t:0,wx:0,wy:0,ph:Math.random()*6.28,aggro:false,hurt:0,dying:0,vxN:false,big:kind==="butcher"};}
@@ -254,7 +262,7 @@ function genFloor(fl){var rng=mulberry32(SEED+fl*97),bossFloor=fl===3||fl===6;
  var mons=[];
  if(bossFloor){for(i=0;i<4;i++){var px=[sr.x+3,sr.x+sr.w-4,sr.x+3,sr.x+sr.w-4][i],py=[sr.y+3,sr.y+3,sr.y+sr.h-4,sr.y+sr.h-4][i];
    m[py*MW+px]=1;m[py*MW+px+1]=1;m[(py+1)*MW+px]=1;m[(py+1)*MW+px+1]=1}
-  var boss=mkMonster("butcher",(sr.x+(sr.w>>1))*TS+8,(sr.y+2)*TS);if(fl===6){boss.hp=boss.maxhp=115;boss.spd=35;boss.dmg=4;}mons.push(boss);
+  var boss=mkMonster("butcher",(sr.x+(sr.w>>1))*TS+8,(sr.y+2)*TS);if(fl===6){boss.spr=[DIABLO_SPR];boss.hp=boss.maxhp=115;boss.spd=35;boss.dmg=4;}mons.push(boss);
   for(i=0;i<(fl===6?48:30);i++)blood.push({x:(sr.x+rng()*sr.w)*TS,y:(sr.y+rng()*sr.h)*TS});}
  else{var pool=fl===1?["fallen","bat"]:(fl<=3?["fallen","bat","skel"]:["bat","skel","skel","fallen"]),tries=0,need=5+fl*2+(fl>=4?3:0);
   while(mons.length<need&&tries<700){tries++;var r2=rms[1+(rng()*(rms.length-1)|0)];if(!r2)continue;
