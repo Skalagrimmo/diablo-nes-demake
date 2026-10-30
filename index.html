@@ -201,15 +201,16 @@ var fireSpr=[mkSpr(["..kk....",".kyok...","kyooik..",".yooik..","..yok...","...k
 // ---------- Тайли ----------
 function mkTile(fn){var c=document.createElement("canvas");c.width=TS;c.height=TS;fn(c.getContext("2d"));return c;}
 function mkTiles(fl){var rng=mulberry32(1234+fl*7);
- var floorC=mkTile(function(g){g.fillStyle=fl===2?"#4a3428":(fl===3?"#3c2020":"#3c3c44");g.fillRect(0,0,TS,TS);
+ var pal=[null,{floor:"#3c3c44",wall:"#6c6c74",edge:"#55555e"},{floor:"#4a3428",wall:"#7c4a00",edge:"#9a6a28"},{floor:"#3c2020",wall:"#7c1800",edge:"#a03020"},{floor:"#49352b",wall:"#805020",edge:"#b07838"},{floor:"#252b3c",wall:"#485878",edge:"#8498b8"},{floor:"#321820",wall:"#9c2818",edge:"#e05020"}][Math.min(6,Math.max(1,fl))];
+ var floorC=mkTile(function(g){g.fillStyle=pal.floor;g.fillRect(0,0,TS,TS);
   for(var i=0;i<26;i++){g.fillStyle=rng()<0.5?"#000000":"#2a2a30";g.fillRect(rng()*TS|0,rng()*TS|0,1,1)}
-  g.fillStyle="#55555e";g.fillRect(0,0,TS,1);g.fillRect(0,0,1,TS);});
- var wallC=mkTile(function(g){var bc=fl===2?"#7c4a00":(fl===3?"#7c1800":"#6c6c74");
+  g.fillStyle=pal.edge;g.fillRect(0,0,TS,1);g.fillRect(0,0,1,TS);});
+ var wallC=mkTile(function(g){var bc=pal.wall;
   g.fillStyle=bc;g.fillRect(0,0,TS,TS);g.fillStyle="#000000";
   g.fillRect(0,0,TS,2);g.fillRect(0,7,TS,1);g.fillRect(0,15,TS,1);
   g.fillRect(7,2,1,5);g.fillRect(3,8,1,7);g.fillRect(12,8,1,7);
-  g.fillStyle="#a0a0aa";g.fillRect(0,2,TS,1);});
- function torch(f){return mkTile(function(g){g.fillStyle=fl===2?"#7c4a00":(fl===3?"#7c1800":"#6c6c74");g.fillRect(0,0,TS,TS);
+  g.fillStyle=pal.edge;g.fillRect(0,2,TS,1);});
+ function torch(f){return mkTile(function(g){g.fillStyle=pal.wall;g.fillRect(0,0,TS,TS);
   g.fillStyle="#000000";g.fillRect(0,0,TS,2);g.fillStyle="#a0a0aa";g.fillRect(0,2,TS,1);
   g.fillStyle="#503000";g.fillRect(6,8,4,6);g.fillStyle=P.yellow;g.fillRect(7,6,2,2);
   if(f){g.fillStyle=P.orange;g.fillRect(5,3,6,4);g.fillStyle=P.yellow;g.fillRect(6,4,2,2);g.fillRect(9,4,1,2)}
@@ -218,65 +219,57 @@ function mkTiles(fl){var rng=mulberry32(1234+fl*7);
   g.fillStyle="#414141";g.fillRect(2,2,12,3);g.fillStyle="#7c7c7c";g.fillRect(4,6,8,3);
   g.fillStyle="#414141";g.fillRect(6,10,4,3);g.fillStyle=P.yellow;g.fillRect(7,13,2,2);});
  return{floor:floorC,wall:wallC,stairs:stairsC,torch:[torch(0),torch(1)]};}
-var TILES=[mkTiles(1),mkTiles(2),mkTiles(3)];
+var TILES=[mkTiles(1),mkTiles(2),mkTiles(3),mkTiles(4),mkTiles(5),mkTiles(6)];
 
 // ---------- Стан гри ----------
 var scene="intro",st=0;
 var player={x:0,y:0,fx:0,fy:1,dir:"down",hp:12,maxhp:12,gold:0,pots:3,cls:"war",level:1,xp:0,xpNext:12,atk:0,cd:0,inv:0,walk:0,frame:0};
 var floorN=1,map=null,rooms=[],torches=[],monsters=[],drops=[],projs=[],parts=[],dnums=[],blood=[];
 var msg=null,fade=1,shake=0,classIdx=0,ev={};
-function genFloor(fl){var rng=mulberry32(SEED+fl*97);
+function genFloor(fl){var rng=mulberry32(SEED+fl*97),bossFloor=fl===3||fl===6;
  var m=new Uint8Array(MW*MH);for(var i=0;i<m.length;i++)m[i]=1;
- var rms=[],want=fl===3?1:(5+fl);
- for(i=0;i<80&&rms.length<want;i++){
-  var w=fl===3?16:(5+(rng()*4|0)),h=fl===3?13:(4+(rng()*3|0));
-  var x=fl===3?8:(2+(rng()*(MW-w-4)|0)),y=fl===3?9:(2+(rng()*(MH-h-4)|0));
-  var ok=true;
-  for(var j=0;j<rms.length;j++){var r=rms[j];if(x<r.x+r.w+2&&x+w+2>r.x&&y<r.y+r.h+2&&y+h+2>r.y){ok=false;break}}
+ var rms=[],want=bossFloor?1:(5+Math.min(fl,5)+(fl>=4?2:0));
+ for(i=0;i<120&&rms.length<want;i++){
+  var w=bossFloor?16:(fl<=2?5+(rng()*4|0):(6+(rng()*5|0)));
+  var h=bossFloor?13:(fl<=2?4+(rng()*3|0):(5+(rng()*4|0)));
+  var x=bossFloor?8:(2+(rng()*(MW-w-4)|0)),y=bossFloor?9:(2+(rng()*(MH-h-4)|0));
+  var ok=true;for(var j=0;j<rms.length;j++){var r=rms[j];if(x<r.x+r.w+2&&x+w+2>r.x&&y<r.y+r.h+2&&y+h+2>r.y){ok=false;break}}
   if(!ok)continue;rms.push({x:x,y:y,w:w,h:h});
   for(var yy=y;yy<y+h;yy++)for(var xx=x;xx<x+w;xx++)m[yy*MW+xx]=0;}
  function carveH(a,b,y){for(var x=Math.min(a,b);x<=Math.max(a,b);x++)if(x>0&&x<MW-1&&y>0&&y<MH-1)m[y*MW+x]=0}
  function carveV(a,b,x){for(var y=Math.min(a,b);y<=Math.max(a,b);y++)if(x>0&&x<MW-1&&y>0&&y<MH-1)m[y*MW+x]=0}
- if(rms.length>1){for(i=1;i<rms.length;i++){var a=rms[i-1],b=rms[i];
-   var ax=a.x+(a.w>>1),ay=a.y+(a.h>>1),bx=b.x+(b.w>>1),by=b.y+(b.h>>1);
-   if(rng()<0.5){carveH(ax,bx,ay);carveV(ay,by,bx)}else{carveV(ay,by,ax);carveH(ax,bx,by)}}
-  a=rms[0];b=rms[rms.length-1];ax=a.x+(a.w>>1);ay=a.y+(a.h>>1);bx=b.x+(b.w>>1);by=b.y+(b.h>>1);
-  carveH(ax,bx,ay);carveV(ay,by,bx);}
+ function connect(a,b){var ax=a.x+(a.w>>1),ay=a.y+(a.h>>1),bx=b.x+(b.w>>1),by=b.y+(b.h>>1);
+  if(rng()<0.5){carveH(ax,bx,ay);carveV(ay,by,bx)}else{carveV(ay,by,ax);carveH(ax,bx,by)}}
+ if(rms.length>1){for(i=1;i<rms.length;i++)connect(rms[i-1],rms[i]);connect(rms[0],rms[rms.length-1]);
+  for(i=0;i<rms.length;i++)if(rng()<(fl>=4?0.42:0.2)){var other=rms[rng()*rms.length|0];if(other!==rms[i])connect(rms[i],other);}}
  var tor=[];
- for(i=0;i<rms.length;i++){var rr=rms[i],n=0;
-  for(var xx2=rr.x+1;xx2<rr.x+rr.w-1&&n<2;xx2+=3){
+ for(i=0;i<rms.length;i++){var rr=rms[i],n=0;for(var xx2=rr.x+1;xx2<rr.x+rr.w-1&&n<(fl>=4?3:2);xx2+=3){
    if(m[(rr.y-1)*MW+xx2]===1){m[(rr.y-1)*MW+xx2]=3;tor.push({x:xx2*TS+8,y:(rr.y-1)*TS+4});n++}}}
- var stairs=null;
- if(fl!==3){var lr=rms[rms.length-1],sx=lr.x+(lr.w>>1),sy=lr.y+(lr.h>>1);m[sy*MW+sx]=2;stairs={x:sx,y:sy}}
- var sr=rms[0],spawn={x:(sr.x+(sr.w>>1))*TS+8,y:(sr.y+(sr.h>>1))*TS+8};
- // Сходи ставимо на найдальшу доступну клітину від старту, а не просто в останню кімнату.
- if(fl!==3){if(stairs)m[stairs.y*MW+stairs.x]=0;var q=new Int32Array(MW*MH),dist=new Int32Array(MW*MH);for(i=0;i<dist.length;i++)dist[i]=-1;
-  var startIdx=(spawn.y/TS|0)*MW+(spawn.x/TS|0),head=0,tail=0,lastIdx=startIdx;q[tail++]=startIdx;dist[startIdx]=0;
-  while(head<tail){var cur=q[head++],cx=cur%MW,cy=cur/MW|0;lastIdx=cur;
-   var ns=[cur-1,cur+1,cur-MW,cur+MW];for(var ni=0;ni<4;ni++){var nn=ns[ni],nx=nn%MW,ny=nn/MW|0;
-    if(nx<1||nx>=MW-1||ny<1||ny>=MH-1||dist[nn]!==-1||m[nn]!==0)continue;
-    dist[nn]=dist[cur]+1;q[tail++]=nn;}}
-  var far=startIdx;for(i=0;i<tail;i++)if(dist[q[i]]>dist[far])far=q[i];
-  var fsx=far%MW,fsy=far/MW|0;m[fsy*MW+fsx]=2;stairs={x:fsx,y:fsy};}
+ var stairs=null,sr=rms[0],spawn={x:(sr.x+(sr.w>>1))*TS+8,y:(sr.y+(sr.h>>1))*TS+8};
+ if(!bossFloor){var q=new Int32Array(MW*MH),dist=new Int32Array(MW*MH);for(i=0;i<dist.length;i++)dist[i]=-1;
+  var startIdx=(spawn.y/TS|0)*MW+(spawn.x/TS|0),head=0,tail=0;q[tail++]=startIdx;dist[startIdx]=0;
+  while(head<tail){var cur=q[head++],ns=[cur-1,cur+1,cur-MW,cur+MW];for(var ni=0;ni<4;ni++){var nn=ns[ni],nx=nn%MW,ny=nn/MW|0;
+    if(nx<1||nx>=MW-1||ny<1||ny>=MH-1||dist[nn]!==-1||m[nn]!==0)continue;dist[nn]=dist[cur]+1;q[tail++]=nn;}}
+  var far=startIdx;for(i=0;i<tail;i++)if(dist[q[i]]>dist[far])far=q[i];var fsx=far%MW,fsy=far/MW|0;m[fsy*MW+fsx]=2;stairs={x:fsx,y:fsy};}
  var mons=[];
- if(fl===3){for(i=0;i<4;i++){var px=[sr.x+3,sr.x+sr.w-4,sr.x+3,sr.x+sr.w-4][i],py=[sr.y+3,sr.y+3,sr.y+sr.h-4,sr.y+sr.h-4][i];
+ if(bossFloor){for(i=0;i<4;i++){var px=[sr.x+3,sr.x+sr.w-4,sr.x+3,sr.x+sr.w-4][i],py=[sr.y+3,sr.y+3,sr.y+sr.h-4,sr.y+sr.h-4][i];
    m[py*MW+px]=1;m[py*MW+px+1]=1;m[(py+1)*MW+px]=1;m[(py+1)*MW+px+1]=1}
-  mons.push(mkMonster("butcher",(sr.x+(sr.w>>1))*TS+8,(sr.y+2)*TS));
-  for(i=0;i<30;i++)blood.push({x:(sr.x+rng()*sr.w)*TS,y:(sr.y+rng()*sr.h)*TS});}
- else{var pool=fl===1?["fallen","bat"]:["fallen","bat","skel"],tries=0,need=5+fl*2;
-  while(mons.length<need&&tries<500){tries++;var r2=rms[1+(rng()*(rms.length-1)|0)];
+  var boss=mkMonster("butcher",(sr.x+(sr.w>>1))*TS+8,(sr.y+2)*TS);if(fl===6){boss.hp=boss.maxhp=115;boss.spd=35;boss.dmg=4;}mons.push(boss);
+  for(i=0;i<(fl===6?48:30);i++)blood.push({x:(sr.x+rng()*sr.w)*TS,y:(sr.y+rng()*sr.h)*TS});}
+ else{var pool=fl===1?["fallen","bat"]:(fl<=3?["fallen","bat","skel"]:["bat","skel","skel","fallen"]),tries=0,need=5+fl*2+(fl>=4?3:0);
+  while(mons.length<need&&tries<700){tries++;var r2=rms[1+(rng()*(rms.length-1)|0)];if(!r2)continue;
    var tx=r2.x+(rng()*r2.w|0),ty=r2.y+(rng()*r2.h|0);if(m[ty*MW+tx]!==0)continue;
    var mx=tx*TS+8,my=ty*TS+8;if(Math.hypot(mx-spawn.x,my-spawn.y)<70)continue;
-   mons.push(mkMonster(pool[rng()*pool.length|0],mx,my));}}
- var dr=[],dt2=0;
- while(dr.length<5&&dt2<300){dt2++;var r3=rms[rng()*rms.length|0];
-  var tx3=r3.x+(rng()*r3.w|0),ty3=r3.y+(rng()*r3.h|0);if(m[ty3*MW+tx3]!==0)continue;
-  dr.push({kind:rng()<0.45?"pot":"gold",x:tx3*TS+8,y:ty3*TS+8});}
+   var mob=mkMonster(pool[rng()*pool.length|0],mx,my),scale=1+Math.max(0,fl-2)*0.16;
+   mob.hp=Math.ceil(mob.hp*scale);mob.maxhp=mob.hp;mob.spd*=1+Math.max(0,fl-3)*0.035;mob.dmg=Math.ceil(mob.dmg*(1+Math.max(0,fl-3)*0.12));mons.push(mob);}}
+ var dr=[],dt2=0,dropNeed=fl>=4?8:5;
+ while(dr.length<dropNeed&&dt2<500){dt2++;var r3=rms[rng()*rms.length|0],tx3=r3.x+(rng()*r3.w|0),ty3=r3.y+(rng()*r3.h|0);
+  if(m[ty3*MW+tx3]!==0)continue;dr.push({kind:rng()<(fl>=4?0.52:0.45)?"pot":"gold",x:tx3*TS+8,y:ty3*TS+8});}
  return{m:m,rooms:rms,torches:tor,stairs:stairs,spawn:spawn,monsters:mons,drops:dr};}
 function enterFloor(fl){floorN=fl;blood=[];map=genFloor(fl);rooms=map.rooms;torches=map.torches;
  monsters=map.monsters;drops=map.drops;projs=[];parts=[];dnums=[];
  player.x=map.spawn.x;player.y=map.spawn.y;player.fx=0;player.fy=1;player.dir="down";player.inv=1;
- msg={t:"B"+fl,life:2.2};}
+ var zone=["","CATHEDRAL","CATACOMBS","BUTCHER LAIR","ANCIENT CRYPT","FROZEN HALLS","HELLFIRE"][fl]||("FLOOR "+fl);msg={t:zone,life:2.8};}
 function startRun(){player.hp=player.maxhp=player.cls==="war"?12:(player.cls==="rog"?9:7);
  player.gold=0;player.pots=3;player.level=1;player.xp=0;player.xpNext=12;SEED=(Math.random()*1e9)|0;enterFloor(1);scene="play";st=0;ev={};setMusic("dungeon");}
 
@@ -300,7 +293,7 @@ function onEnter(){switch(scene){
  case"title":scene="select";st=0;break;
  case"select":player.cls=["war","rog","sor"][classIdx];startRun();break;
  case"butcher":scene="play";st=0;break;
- case"dead":player.gold=player.gold>>1;player.hp=Math.max(1,Math.ceil(player.maxhp*0.5));enterFloor(floorN);scene="play";st=0;setMusic(floorN===3?"boss":"dungeon");break;
+ case"dead":player.gold=player.gold>>1;player.hp=Math.max(1,Math.ceil(player.maxhp*0.5));enterFloor(floorN);scene="play";st=0;setMusic(floorN===3||floorN===6?"boss":"dungeon");break;
  case"ending":if(st>24){scene="title";st=0;setMusic("title")}break;}}
 canvas.addEventListener("mousedown",function(){initAudio()});
 Array.prototype.forEach.call(document.querySelectorAll(".touch-controls [data-key]"),function(btn){
@@ -326,7 +319,7 @@ function hurtMon(e,d){e.hp-=d;e.hurt=0.12;dnums.push({x:e.x,y:e.y-10,v:d,life:0.
   var t=MON[e.kind];
   if(!e.big){gainXp(e.kind==="fallen"?4:(e.kind==="bat"?3:6));if(Math.random()<t.gold)drops.push({kind:"gold",x:e.x,y:e.y});
    if(Math.random()<t.pot)drops.push({kind:"pot",x:e.x,y:e.y+6});}
-  if(e.kind==="butcher"){drops.push({kind:"soul",x:e.x,y:e.y});setMusic(null);msg={t:"THE SOULSTONE...",life:3}}}}
+  if(e.kind==="butcher"){drops.push({kind:"soul",x:e.x,y:e.y});setMusic(null);msg={t:floorN===6?"DIABLO FALLS...":"THE SOULSTONE...",life:3}}}}
 function hurtPlayer(d){if(player.inv>0)return;player.hp-=d;player.inv=0.9;shake=4;sfx("hurt");
  spawnParts(player.x,player.y,8,P.red);
  if(player.hp<=0){player.hp=0;scene="dead";st=0;setMusic(null);}}
@@ -373,7 +366,7 @@ function updatePlay(dt){var i=inp(),sp=player.cls==="rog"?60:(player.cls==="sor"
   if(Math.hypot(dr2.x-player.x,dr2.y-player.y)<10){
    if(dr2.kind==="gold"){player.gold+=5+(Math.random()*10|0);sfx("gold")}
    else if(dr2.kind==="pot"){player.pots++;sfx("pot")}
-   else{sfx("pick");scene="ending";st=0;ev={};setMusic("end");return}
+   else{sfx("pick");if(floorN===3){enterFloor(4);scene="play";setMusic("dungeon");}else{scene="ending";st=0;ev={};setMusic("end");}return}
    drops.splice(i,1);}}
  for(i=parts.length-1;i>=0;i--){var pp=parts[i];pp.x+=pp.vx*dt;pp.y+=pp.vy*dt;pp.vy+=120*dt;pp.life-=dt;if(pp.life<=0)parts.splice(i,1)}
  for(i=dnums.length-1;i>=0;i--){var dn=dnums[i];dn.y-=22*dt;dn.life-=dt;if(dn.life<=0)dnums.splice(i,1)}
@@ -381,7 +374,7 @@ function updatePlay(dt){var i=inp(),sp=player.cls==="rog"?60:(player.cls==="sor"
  var ptx=player.x/TS|0,pty=player.y/TS|0;
  if(map.stairs){var sx=map.stairs.x*TS+8,sy=map.stairs.y*TS+8,nearStairs=Math.hypot(player.x-sx,player.y-sy)<22;
   if(nearStairs&&(i.act||ptx===map.stairs.x&&pty===map.stairs.y)){sfx("stairs");var nextFloor=floorN+1;enterFloor(nextFloor);
-   if(nextFloor===3){scene="butcher";st=0;ev={};setMusic(null)}else setMusic("dungeon");}}}
+   if(nextFloor===3||nextFloor===6){scene="butcher";st=0;ev={};setMusic(null)}else setMusic("dungeon");}}}
 
 // ---------- Рендер ----------
 function drawSpr(img,x,y,flip){x=x|0;y=y|0;
@@ -394,7 +387,7 @@ function drawPlay(){var camX=Math.max(0,Math.min(player.x-W/2,MW*TS-W)),
  camY=Math.max(0,Math.min(player.y-(H-24)/2,MH*TS-(H-24)));
  ctx.save();
  if(shake>0.2)ctx.translate((Math.random()*2-1)*shake|0,(Math.random()*2-1)*shake|0);
- var tx0=camX/TS|0,ty0=camY/TS|0,tset=TILES[floorN-1],tf=(gt*8|0)%2;
+ var tx0=camX/TS|0,ty0=camY/TS|0,tset=TILES[Math.min(6,Math.max(1,floorN))-1],tf=(gt*8|0)%2;
  for(var ty=ty0;ty<=ty0+15&&ty<MH;ty++)for(var tx=tx0;tx<=tx0+16&&tx<MW;tx++){
   var id=map.m[ty*MW+tx],sx=tx*TS-camX,sy=ty*TS-camY;
   if(id===0||id===2)ctx.drawImage(tset.floor,sx,sy);
@@ -423,7 +416,7 @@ function drawPlay(){var camX=Math.max(0,Math.min(player.x-W/2,MW*TS-W)),
    if(e3.hurt>0){ctx.fillStyle="rgba(255,255,255,0.45)";ctx.fillRect(e3.x-camX-off,e3.y-camY+offY,fr2.width,fr2.height)}
    if(e3.big){ // смуга здоров'я М'ясника
     ctx.fillStyle=P.black;ctx.fillRect(W/2-52,4,104,8);ctx.fillStyle=P.dred;ctx.fillRect(W/2-50,6,100,4);
-    ctx.fillStyle=P.red;ctx.fillRect(W/2-50,6,(100*e3.hp/e3.maxhp)|0,4);textC("BUTCHER",14,P.lgray,1)}}}
+    ctx.fillStyle=P.red;ctx.fillRect(W/2-50,6,(100*e3.hp/e3.maxhp)|0,4);textC(floorN===6?"DIABLO":"BUTCHER",14,P.lgray,1)}}}
  for(var pi=0;pi<projs.length;pi++){var pr=projs[pi];
   ctx.drawImage(pr.kind==="fire"?fireSpr[(gt*12|0)%2]:knifeSpr,pr.x-camX-4,pr.y-camY-4);}
  for(var qi=0;qi<parts.length;qi++){ctx.fillStyle=parts[qi].col;ctx.fillRect(parts[qi].x-camX|0,parts[qi].y-camY|0,1,1)}
@@ -509,7 +502,7 @@ function drawButcher(){ctx.fillStyle=P.black;ctx.fillRect(0,0,W,H);
   ctx.fillStyle=P.red;ctx.fillRect(W/2-18,H/2-24,eyeS,eyeS);ctx.fillRect(W/2+12-eyeS,H/2-24,eyeS,eyeS);
   shake=Math.max(shake,2);}
  if(st>3.9&&!ev.roar){ev.roar=1;sfx("roar");shake=6}
- if(st>4.2)typeLine("FRESH MEAT",4.2,8,(W-36)/2,206,P.red,2);
+ if(st>4.2)typeLine(floorN===6?"WELCOME TO HELL":"FRESH MEAT",4.2,8,floorN===6?76:(W-36)/2,206,P.red,2);
  if(st>6){scene="play";st=0;ev.bossMus=1;setMusic("boss")}}
 function drawEnding(){ctx.fillStyle=P.black;ctx.fillRect(0,0,W,H);
  if(st<4){ // камінь душі
@@ -517,14 +510,14 @@ function drawEnding(){ctx.fillStyle=P.black;ctx.fillRect(0,0,W,H);
   ctx.fillStyle="rgba(216,40,0,"+pu.toFixed(2)+")";ctx.fillRect(112,96,32,32);
   ctx.fillStyle="rgba(216,40,0,"+(pu/2).toFixed(2)+")";ctx.fillRect(104,88,48,48);
   ctx.drawImage(soulSpr,124,108,8,8);
-  typeLine("THE BUTCHER LIES DEAD.",0.5,20,60,160,P.lgray,1);}
+  typeLine(floorN===6?"DIABLO HAS FALLEN.":"THE BUTCHER LIES DEAD.",0.5,20,floorN===6?68:60,160,P.lgray,1);}
  else if(st<11){ // панорами: колони, герой на колінах
   for(var x=10;x<W;x+=44){ctx.fillStyle="#141420";ctx.fillRect(x,0,14,168);ctx.fillRect(x+2,0,3,168);
    ctx.fillStyle=P.orange;ctx.fillRect(x+5,40+8*Math.sin(gt*3+x),4,6);}
   ctx.fillStyle="#0c0c14";ctx.fillRect(0,168,W,40);
   var hs2=HERO.down[0];ctx.drawImage(hs2,112,148,32,32);
   ctx.drawImage(soulSpr,146,168,8,8);
-  typeLine("THE HERO CLAIMS THE SOULSTONE.",4.5,20,44,206,P.lgray,1);}
+  typeLine(floorN===6?"THE HELL GROWS SILENT.":"THE HERO CLAIMS THE SOULSTONE.",4.5,20,floorN===6?56:44,206,P.lgray,1);}
  else if(st<17){ // фейк-зум на обличчя
   ctx.fillStyle="#0c0c14";ctx.fillRect(0,0,W,H);
   ctx.drawImage(HERO.down[0],0,2,16,7,80,60,96,42);
