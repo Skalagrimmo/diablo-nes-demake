@@ -1,0 +1,48 @@
+name: Validate prototype
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  syntax:
+    name: JavaScript syntax and repository files
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Extract and check the embedded game script
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const html = fs.readFileSync('index.html', 'utf8');
+          const scripts = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)];
+
+          if (scripts.length !== 1) {
+            console.error('Expected exactly one inline script, found ' + scripts.length + '.');
+            process.exit(1);
+          }
+
+          fs.writeFileSync('/tmp/diablo-nes-demake.js', scripts[0][1], 'utf8');
+          NODE
+
+          node --check /tmp/diablo-nes-demake.js
+
+      - name: Verify required documentation
+        run: |
+          test -s README.md
+          test -s CONTRIBUTING.md
+          test -s docs/design.md
+          test -s docs/architecture.md
+          test -s docs/testing.md
