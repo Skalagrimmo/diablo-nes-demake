@@ -321,7 +321,7 @@ function tryMove(e,dx,dy,r){if(!hitWall(e.x+dx,e.y,r))e.x+=dx;if(!hitWall(e.x,e.
 function spawnParts(x,y,n,col){for(var i=0;i<n;i++)parts.push({x:x,y:y,
  vx:(Math.random()*2-1)*60,vy:(Math.random()*2-1)*60-20,life:0.4+Math.random()*0.3,col:col})}
 function gainXp(amount){player.xp+=amount;while(player.xp>=player.xpNext){player.xp-=player.xpNext;player.level++;player.xpNext=12+(player.level-1)*8;player.maxhp+=2;player.hp=Math.min(player.maxhp,player.hp+2);msg={t:"LEVEL UP!",life:2.0};sfx("pick");}}
-function hurtMon(e,d,kx,ky){e.hp-=d;e.hurt=0.12;var kl=Math.hypot(kx||0,ky||0)||1,kn=e.big?58:112;e.kbx=(kx||0)/kl*kn;e.kby=(ky||0)/kl*kn;e.kbt=e.big?0.10:0.16;dnums.push({x:e.x,y:e.y-10,v:d,life:0.6});
+function hurtMon(e,d,kx,ky,effect){e.hp-=d;e.hurt=0.12;if(effect==="war"){e.stunT=0;var kl=Math.hypot(kx||0,ky||0)||1,kn=e.big?58:112;e.kbx=(kx||0)/kl*kn;e.kby=(ky||0)/kl*kn;e.kbt=e.big?0.10:0.16}else if(effect==="rog"){e.kbt=0;e.stunT=Math.max(e.stunT||0,e.big?0.10:0.24);spawnParts(e.x,e.y,4,P.lgray)}else if(effect==="sor"){e.kbt=0;e.stunT=0;e.burnT=Math.max(e.burnT||0,e.big?1.0:2.2);e.burnCd=0.25;spawnParts(e.x,e.y,5,P.orange)}dnums.push({x:e.x,y:e.y-10,v:d,life:0.6});
  spawnParts(e.x,e.y,6,P.red);sfx(e.big?"bossHit":"hit");
  if(e.hp<=0&&!e.dying){e.dying=e.big?2:0.5;sfx("die");
   var t=MON[e.kind];
@@ -342,7 +342,7 @@ function updatePlay(dt){var i=inp(),sp=player.cls==="rog"?60:(player.cls==="sor"
   if(player.cls==="war"){sfx("swing");
    var hx=player.x+player.fx*15,hy=player.y+player.fy*15;
    for(var j=0;j<monsters.length;j++){var e=monsters[j];if(e.dying)continue;
-    if(Math.hypot(e.x-hx,e.y-hy)<(e.big?24:14))hurtMon(e,3+(Math.random()*2|0)+Math.floor((player.level-1)/2),player.fx,player.fy);}}
+    if(Math.hypot(e.x-hx,e.y-hy)<(e.big?24:14))hurtMon(e,3+(Math.random()*2|0)+Math.floor((player.level-1)/2),player.fx,player.fy,"war");}}
   else if(player.cls==="rog"){var aimX=player.fx,aimY=player.fy,arrowTarget=null,arrowBest=130;for(var ai=0;ai<monsters.length;ai++){var ae=monsters[ai];if(ae.dying)continue;var adx=ae.x-player.x,ady=ae.y-player.y,ad=Math.hypot(adx,ady);if(ad<1||ad>arrowBest)continue;var forward=(adx*player.fx+ady*player.fy)/ad;if(forward>0.55){arrowBest=ad;arrowTarget=ae}}if(arrowTarget){var facing=Math.atan2(player.fy,player.fx),wanted=Math.atan2(arrowTarget.y-player.y,arrowTarget.x-player.x),turn=Math.atan2(Math.sin(wanted-facing),Math.cos(wanted-facing));var aimAngle=facing+Math.max(-0.55,Math.min(0.55,turn))*0.72;aimX=Math.cos(aimAngle);aimY=Math.sin(aimAngle)}sfx("knife");projs.push({kind:"knife",x:player.x+aimX*8,y:player.y+aimY*8,vx:aimX*150,vy:aimY*150,dmg:2+Math.floor((player.level-1)/2),life:1.2})}
   else{var target=null,best=150;for(var ti=0;ti<monsters.length;ti++){var tm=monsters[ti];if(tm.dying)continue;var td=Math.hypot(tm.x-player.x,tm.y-player.y);if(td<best){best=td;target=tm}}var aimX=target?(target.x-player.x)/Math.max(1,best):player.fx,aimY=target?(target.y-player.y)/Math.max(1,best):player.fy;sfx("fire");projs.push({kind:"fire",x:player.x+aimX*9,y:player.y+aimY*9,vx:aimX*145,vy:aimY*145,dmg:4+Math.floor((player.level-1)/2),life:1.6,pi:false})}}
  if(i.b&&player.cd<=0&&player.pots>0&&player.hp<player.maxhp){player.pots--;player.hp=Math.min(player.maxhp,player.hp+4);player.cd=0.5;sfx("pot");
@@ -351,10 +351,11 @@ function updatePlay(dt){var i=inp(),sp=player.cls==="rog"?60:(player.cls==="sor"
   if(p.life<=0||hitWall(p.x,p.y,2)){if(p.kind==="fire")spawnParts(p.x,p.y,8,P.orange);projs.splice(i,1);continue}
   var hit=false;
   for(var j2=monsters.length-1;j2>=0;j2--){var e2=monsters[j2];if(e2.dying)continue;
-   if(Math.hypot(e2.x-p.x,e2.y-p.y)<e2.r+3){hurtMon(e2,p.dmg,p.vx,p.vy);hit=true;break}}
+   if(Math.hypot(e2.x-p.x,e2.y-p.y)<e2.r+3){hurtMon(e2,p.dmg,p.vx,p.vy,p.kind==="knife"?"rog":"sor");hit=true;break}}
   if(hit){if(p.kind==="fire")spawnParts(p.x,p.y,8,P.orange);projs.splice(i,1);}}
  for(i=monsters.length-1;i>=0;i--){var m2=monsters[i];m2.hurt-=dt;
   if(m2.dying>0){m2.dying-=dt;if(m2.dying<=0)monsters.splice(i,1);continue}
+  if(m2.burnT>0){m2.burnT-=dt;m2.burnCd-=dt;if(m2.burnCd<=0){m2.burnCd=0.55;hurtMon(m2,1,0,0,"tick");spawnParts(m2.x,m2.y,3,P.orange);if(m2.dying)continue}}
   var dx=player.x-m2.x,dy=player.y-m2.y,d=Math.hypot(dx,dy)||1;
   var mvx=0,mvy=0;
   if(m2.kind==="bat"){var s2=Math.sin(gt*6+m2.ph),radial=d<30?-1:(d>58?1:0),orbit=d<110?24:10;
@@ -367,6 +368,7 @@ function updatePlay(dt){var i=inp(),sp=player.cls==="rog"?60:(player.cls==="sor"
    else{m2.t-=dt;if(m2.t<0){m2.t=0.6+Math.random()*1.4;m2.wx=(Math.random()*2-1)*m2.spd;m2.wy=(Math.random()*2-1)*m2.spd}
     mvx=m2.wx;mvy=m2.wy;}}
   if(mvx)m2.vxN=mvx<0;
+  if(m2.stunT>0){m2.stunT-=dt;mvx=0;mvy=0}
   if(m2.kbt>0){m2.kbt-=dt;mvx=m2.kbx;mvy=m2.kby;m2.kbx*=Math.max(0,1-dt*9);m2.kby*=Math.max(0,1-dt*9);}
   tryMove(m2,mvx*dt,mvy*dt,m2.r);
   if(m2.kind==="butcher"&&m2.aggro){shake=Math.max(shake,1)}
