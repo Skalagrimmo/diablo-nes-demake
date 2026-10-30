@@ -18,6 +18,7 @@
   .touch-controls button:active{background:#59302b;transform:translateY(2px);box-shadow:0 1px 0 #08070c}
   .pad [data-key="ArrowUp"]{grid-column:2;grid-row:1}.pad [data-key="ArrowLeft"]{grid-column:1;grid-row:2}.pad [data-key="ArrowDown"]{grid-column:2;grid-row:2}.pad [data-key="ArrowRight"]{grid-column:3;grid-row:2}
   .actions button{width:58px;height:58px;border-radius:50%;font-size:18px}
+  .actions button[data-key="c"]{font-size:11px;border-radius:12px}
   @media (pointer:coarse),(max-width:700px){.touch-controls{display:flex}.hint{font-size:11px;padding:0 8px}}
 </style>
 </head>
@@ -27,7 +28,7 @@
 <div class="scan"></div>
 </div>
 <div class="hint">
-  <kbd>←→↑↓</kbd>/<kbd>WASD</kbd> рух &nbsp; <kbd>Z</kbd>/<kbd>Space</kbd> атака &nbsp; <kbd>X</kbd> зілля &nbsp; <kbd>E</kbd> дія / сходи &nbsp; <kbd>Enter</kbd> старт / далі &nbsp; <kbd>M</kbd> звук<br>
+  <kbd>←→↑↓</kbd>/<kbd>WASD</kbd> рух &nbsp; <kbd>Z</kbd>/<kbd>Space</kbd> атака &nbsp; <kbd>X</kbd> зілля &nbsp; <kbd>E</kbd> дія / сходи &nbsp; <kbd>Enter</kbd> старт / далі &nbsp; <kbd>Esc</kbd> пауза &nbsp; <kbd>C</kbd> продовжити &nbsp; <kbd>M</kbd> звук<br>
   Клікніть по екрану, щоб активувати звук. Демейк Diablo (1996) під залізо NES: 256×240, світло через «attribute table», катсцени в дусі Ninja Gaiden.
 </div>
 <div class="touch-controls" aria-label="Сенсорне керування">
@@ -42,6 +43,8 @@
     <button type="button" data-key="x" aria-label="Зілля" tabindex="-1">B</button>
     <button type="button" data-key="e" aria-label="Дія або взаємодія" tabindex="-1">ACT</button>
   <button type="button" data-key="Enter" aria-label="Підтвердити або продовжити" tabindex="-1">START</button>
+  <button type="button" data-key="c" aria-label="Продовжити збережену гру" tabindex="-1" id="continueBtn">CONT</button>
+  <button type="button" data-key="Escape" aria-label="Пауза" tabindex="-1">Ⅱ</button>
   </div>
 </div>
 <script>
@@ -252,6 +255,8 @@ var scene="intro",st=0;
 var player={x:0,y:0,fx:0,fy:1,dir:"down",hp:12,maxhp:12,gold:0,pots:3,cls:"war",level:1,xp:0,xpNext:12,atk:0,cd:0,inv:0,walk:0,frame:0};
 var floorN=1,map=null,rooms=[],torches=[],decor=[],monsters=[],drops=[],projs=[],parts=[],dnums=[],blood=[];
 var msg=null,fade=1,shake=0,classIdx=0,ev={};
+var SAVE_KEY="diabloNesDemake.save.v1",OPT_KEY="diabloNesDemake.options.v1";
+var saveAvailable=false,saveClock=0,paused=false,pauseIndex=0,resumeTrack="dungeon";
 function genFloor(fl){var rng=mulberry32(SEED+fl*97),bossFloor=fl===3||fl===6;
  var m=new Uint8Array(MW*MH);for(var i=0;i<m.length;i++)m[i]=1;
  var shape=fl===1?0:(fl===2||fl===4?2:(fl===5?3:0));
@@ -313,32 +318,94 @@ function enterFloor(fl){floorN=fl;blood=[];map=genFloor(fl);rooms=map.rooms;torc
  monsters=map.monsters;drops=map.drops;projs=[];parts=[];dnums=[];
  player.x=map.spawn.x;player.y=map.spawn.y;player.fx=0;player.fy=1;player.dir="down";player.inv=1;
  var zone=["","CATHEDRAL","CATACOMBS","BUTCHER LAIR","ANCIENT CRYPT","FROZEN HALLS","HELLFIRE"][fl]||("FLOOR "+fl);msg={t:zone,life:2.8};}
-function startRun(){player.hp=player.maxhp=player.cls==="war"?12:(player.cls==="rog"?9:7);
+function startRun(){clearSave();paused=false;saveClock=0;player.hp=player.maxhp=player.cls==="war"?12:(player.cls==="rog"?9:7);
  player.gold=0;player.pots=3;player.level=1;player.xp=0;player.xpNext=12;SEED=(Math.random()*1e9)|0;enterFloor(1);scene="play";st=0;ev={};setMusic("dungeon");}
 
 // ---------- Ввід ----------
 var keys={};
+function refreshContinueButton(){var b=document.getElementById("continueBtn");if(b)b.style.display=saveAvailable?"":"none";}
+function loadOptions(){try{var raw=localStorage.getItem(OPT_KEY);if(raw){var o=JSON.parse(raw);mute=!!o.mute}}catch(e){}}
+function storeOptions(){try{localStorage.setItem(OPT_KEY,JSON.stringify({mute:mute}))}catch(e){}}
+function clearSave(){try{localStorage.removeItem(SAVE_KEY)}catch(e){}saveAvailable=false;saveClock=0;refreshContinueButton();}
+function saveRun(){
+ if(!map||!player||scene!=="play")return false;
+ try{
+  var pk=["x","y","fx","fy","dir","hp","maxhp","gold","pots","cls","level","xp","xpNext","atk","cd","inv","walk","frame"];
+  var ps={};for(var pi=0;pi<pk.length;pi++)ps[pk[pi]]=player[pk[pi]];
+  var ms=monsters.map(function(m){var o={};var fields=["kind","x","y","hp","maxhp","spd","dmg","r","t","wx","wy","ph","aggro","hurt","dying","vxN","big","kbx","kby","kbt","stunT","burnT","burnCd"];
+   for(var k=0;k<fields.length;k++)if(m[fields[k]]!==undefined)o[fields[k]]=m[fields[k]];return o;});
+  var data={v:1,floor:floorN,seed:SEED,player:ps,map:{m:Array.from(map.m),rooms:rooms,torches:torches,stairs:map.stairs,spawn:map.spawn,decor:decor},
+   monsters:ms,drops:drops,blood:blood,msg:msg};
+  localStorage.setItem(SAVE_KEY,JSON.stringify(data));saveAvailable=true;saveClock=0;refreshContinueButton();return true;
+ }catch(e){return false;}
+}
+function loadSave(){
+ try{
+  var raw=localStorage.getItem(SAVE_KEY);if(!raw)return false;var d=JSON.parse(raw);
+  if(!d||d.v!==1||d.floor<1||d.floor>6||!d.map||!Array.isArray(d.map.m)||d.map.m.length!==MW*MH||!d.player||!Array.isArray(d.monsters)||!Array.isArray(d.drops)){clearSave();return false;}
+  if(["war","rog","sor"].indexOf(d.player.cls)<0){clearSave();return false;}
+  SEED=d.seed|0;floorN=d.floor;
+  map={m:new Uint8Array(d.map.m),rooms:d.map.rooms||[],torches:d.map.torches||[],stairs:d.map.stairs||null,spawn:d.map.spawn||{x:0,y:0},decor:d.map.decor||[]};
+  rooms=map.rooms;torches=map.torches;decor=map.decor;
+  var pk=["x","y","fx","fy","dir","hp","maxhp","gold","pots","cls","level","xp","xpNext","atk","cd","inv","walk","frame"];
+  for(var pi=0;pi<pk.length;pi++)if(d.player[pk[pi]]!==undefined)player[pk[pi]]=d.player[pk[pi]];
+  monsters=d.monsters.slice(0,100).map(function(o){var m=mkMonster(o.kind,o.x,o.y);
+   for(var k in o)if(k!=="kind")m[k]=o[k];
+   if(m.kind==="butcher"&&floorN===6){m.spr=[DIABLO_SPR];m.big=true;}return m;});
+  drops=d.drops.slice(0,100);blood=Array.isArray(d.blood)?d.blood.slice(0,200):[];
+  projs=[];parts=[];dnums=[];msg=d.msg||{t:"GAME RESTORED",life:2};
+  scene="play";paused=false;st=0;ev={bossMus:floorN===3||floorN===6?1:0};fade=0.65;saveClock=0;
+  setMusic(floorN===3||floorN===6?"boss":"dungeon");saveAvailable=true;refreshContinueButton();return true;
+ }catch(e){clearSave();return false;}
+}
+function pauseGame(){if(scene!=="play"||paused)return;paused=true;pauseIndex=0;resumeTrack=musName||"dungeon";setMusic(null);}
+function resumeGame(){paused=false;setMusic(resumeTrack||"dungeon");}
+function choosePause(){
+ if(pauseIndex===0){resumeGame();return}
+ if(pauseIndex===1){mute=!mute;storeOptions();return}
+ if(pauseIndex===2){enterFloor(floorN);scene="play";paused=false;ev={};setMusic(floorN===3||floorN===6?"boss":"dungeon");saveRun();return}
+ if(pauseIndex===3){saveRun();paused=false;scene="title";st=0;setMusic("title");return}
+}
+function drawPause(){
+ ctx.fillStyle="rgba(0,0,0,0.78)";ctx.fillRect(22,34,212,174);
+ ctx.strokeStyle="#8c4838";ctx.strokeRect(22.5,34.5,211,173);
+ textC("PAUSED",50,P.red,2);
+ var labels=["RESUME",mute?"SOUND: OFF":"SOUND: ON","RESTART FLOOR","SAVE & TITLE"];
+ for(var i=0;i<labels.length;i++){var y=88+i*25;
+  if(i===pauseIndex){ctx.fillStyle="#38201e";ctx.fillRect(48,y-5,160,18);textC("> "+labels[i],y,P.yellow,1);}
+  else textC(labels[i],y,P.lgray,1);}
+ textC("UP/DOWN + ENTER OR A",190,P.gray,1);
+}
 function key(e,down){var k=e.key;
- if(["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"," "].indexOf(k)>=0)e.preventDefault();
+ if(["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"," ","Escape"].indexOf(k)>=0)e.preventDefault();
  if(down){initAudio();
   if(!keys[k]){keys[k]=true;
-   if(k==="Enter")onEnter();
-   if(scene==="select"&&(k==="ArrowLeft"||k==="a"||k==="A"))classIdx=(classIdx+2)%3;
-   if(scene==="select"&&(k==="ArrowRight"||k==="d"||k==="D"))classIdx=(classIdx+1)%3;
-   if(k==="m"||k==="M")mute=!mute;
+   if((k==="Escape"||k==="p"||k==="P")&&scene==="play"&&!paused)pauseGame();
+   else if(paused){
+    if(k==="Escape"||k==="p"||k==="P")resumeGame();
+    else if(k==="ArrowUp"||k==="w"||k==="W")pauseIndex=(pauseIndex+3)%4;
+    else if(k==="ArrowDown"||k==="s"||k==="S")pauseIndex=(pauseIndex+1)%4;
+    else if(k==="Enter"||k==="z"||k==="Z"||k===" ")choosePause();
+   }else{
+    if(k==="Enter")onEnter();
+    if(scene==="title"&&(k==="c"||k==="C")){if(!loadSave())msg={t:"NO SAVED RUN",life:1.5};}
+    if(scene==="select"&&(k==="ArrowLeft"||k==="a"||k==="A"))classIdx=(classIdx+2)%3;
+    if(scene==="select"&&(k==="ArrowRight"||k==="d"||k==="D"))classIdx=(classIdx+1)%3;
+    if(k==="m"||k==="M"){mute=!mute;storeOptions();}
+   }
   }
  }else keys[k]=false;}
 function inp(){return{left:keys["ArrowLeft"]||keys["a"]||keys["A"],right:keys["ArrowRight"]||keys["d"]||keys["D"],
  up:keys["ArrowUp"]||keys["w"]||keys["W"],down:keys["ArrowDown"]||keys["s"]||keys["S"],
  a:keys["z"]||keys["Z"]||keys[" "]||keys["j"]||keys["J"],b:keys["x"]||keys["X"]||keys["k"]||keys["K"],act:keys["e"]||keys["E"]}}
-function onEnter(){switch(scene){
+function onEnter(){if(paused){choosePause();return}switch(scene){
  case"intro":scene="title";st=0;setMusic("title");break;
  case"title":scene="select";st=0;break;
  case"select":player.cls=["war","rog","sor"][classIdx];startRun();break;
  case"butcher":scene="play";st=0;break;
  case"soulstone":finishSoulstone();break;
  case"dead":player.gold=player.gold>>1;player.hp=Math.max(1,Math.ceil(player.maxhp*0.5));enterFloor(floorN);scene="play";st=0;setMusic(floorN===3||floorN===6?"boss":"dungeon");break;
- case"ending":if(st>24){scene="title";st=0;setMusic("title")}break;}}
+ case"ending":if(st>24){clearSave();scene="title";st=0;setMusic("title")}break;}}
 canvas.addEventListener("mousedown",function(){initAudio()});
 Array.prototype.forEach.call(document.querySelectorAll(".touch-controls [data-key]"),function(btn){
  var k=btn.getAttribute("data-key");
@@ -413,7 +480,7 @@ function updatePlay(dt){var i=inp(),sp=player.cls==="rog"?60:(player.cls==="sor"
   if(Math.hypot(dr2.x-player.x,dr2.y-player.y)<10){
    if(dr2.kind==="gold"){player.gold+=5+(Math.random()*10|0);sfx("gold")}
    else if(dr2.kind==="pot"){player.pots++;sfx("pot")}
-   else{sfx("pick");drops.splice(i,1);if(floorN===3){scene="soulstone";st=0;ev={};setMusic("end");}else{scene="ending";st=0;ev={};setMusic("end");}return}
+   else{sfx("pick");drops.splice(i,1);if(floorN===3){scene="soulstone";st=0;ev={};setMusic("end");}else{clearSave();scene="ending";st=0;ev={};setMusic("end");}return}
    drops.splice(i,1);}}
  for(i=parts.length-1;i>=0;i--){var pp=parts[i];pp.x+=pp.vx*dt;pp.y+=pp.vy*dt;pp.vy+=120*dt;pp.life-=dt;if(pp.life<=0)parts.splice(i,1)}
  for(i=dnums.length-1;i>=0;i--){var dn=dnums[i];dn.y-=22*dt;dn.life-=dt;if(dn.life<=0)dnums.splice(i,1)}
@@ -524,8 +591,9 @@ function drawTitle(){ctx.fillStyle=P.black;ctx.fillRect(0,0,W,H);
  text("DIABLO",38+3,64+3,"#3c0000",5);text("DIABLO",38,64,P.red,5);
  textC("N E S   D E M A K E",104,P.lgray,1);
  var hs=HERO.down[(gt*3|0)%2];ctx.drawImage(hs,112,126,32,32);
- if((gt*2|0)%2)textC("PRESS ENTER",180,P.white,1);
- textC("2026 DEMAKE PROTOTYPE",226,P.dgray,1);}
+ if((gt*2|0)%2)textC("PRESS ENTER",176,P.white,1);
+ if(saveAvailable)textC("C: CONTINUE LAST RUN",202,P.yellow,1);
+ textC("2026 DEMAKE",226,P.dgray,1);}
 function drawSelect(){ctx.fillStyle=P.black;ctx.fillRect(0,0,W,H);
  textC("CHOOSE YOUR HERO",44,P.red,2);
  var defs=[["WARRIOR",HERO,"HP 12  SWORD"],["ROGUE",ROGUE,"HP 9   KNIVES"],["SORCERER",SORC,"HP 7   FIRE"]];
@@ -609,20 +677,21 @@ function frame(ts){if(!running)return;
   case"intro":drawIntro();break;
   case"title":drawTitle();break;
   case"select":drawSelect();break;
-  case"play":updatePlay(dt);drawPlay();break;
+  case"play":if(paused){drawPlay();drawPause()}else{updatePlay(dt);if(scene==="play"){saveClock+=dt;if(saveClock>=3)saveRun()}drawPlay()}break;
   case"butcher":drawButcher();break;
   case"soulstone":drawSoulstone();break;
   case"ending":drawEnding();break;
   case"dead":drawPlay();break;}
  if(fade>0){ctx.fillStyle="rgba(0,0,0,"+fade.toFixed(2)+")";ctx.fillRect(0,0,W,H);fade-=dt*0.7;}
  RAF=requestAnimationFrame(frame);}
+loadOptions();try{saveAvailable=!!localStorage.getItem(SAVE_KEY)}catch(e){saveAvailable=false}refreshContinueButton();
 function stop(){running=false;if(RAF)cancelAnimationFrame(RAF);if(musTimer)clearInterval(musTimer);
  document.removeEventListener("keydown",keyDownH);document.removeEventListener("keyup",keyUpH);}
 var keyDownH=function(e){key(e,true)},keyUpH=function(e){key(e,false)};
 document.removeEventListener("keydown",keyDownH);document.removeEventListener("keyup",keyUpH);
 document.addEventListener("keydown",keyDownH);
 document.addEventListener("keyup",keyUpH);
-RAF=requestAnimationFrame(frame);
+refreshContinueButton();RAF=requestAnimationFrame(frame);
 return{stop:stop};}
 
 ENGINE(document.getElementById("screen"));
