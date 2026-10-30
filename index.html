@@ -203,9 +203,6 @@ var scene="intro",st=0;
 var player={x:0,y:0,fx:0,fy:1,dir:"down",hp:12,maxhp:12,gold:0,pots:3,cls:"war",atk:0,cd:0,inv:0,walk:0,frame:0};
 var floorN=1,map=null,rooms=[],torches=[],monsters=[],drops=[],projs=[],parts=[],dnums=[],blood=[];
 var msg=null,fade=1,shake=0,classIdx=0,ev={};
-function mkMonster(kind,x,y){var t=MON[kind];
- return{kind:x:x,y:y,hp:t.hp,maxhp:t.hp,spd:t.spd,dmg:t.dmg,r:t.r,spr:t.spr,
-  t:0,wx:0,wy:0,ph:Math.random()*6.28,aggro:false,hurt:0,dying:0,big:kind==="butcher"};}
 function genFloor(fl){var rng=mulberry32(SEED+fl*97);
  var m=new Uint8Array(MW*MH);for(var i=0;i<m.length;i++)m[i]=1;
  var rms=[],want=fl===3?1:(5+fl);
