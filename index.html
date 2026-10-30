@@ -333,7 +333,7 @@ function updatePlay(dt){var i=inp(),sp=player.cls==="rog"?60:(player.cls==="sor"
    for(var j=0;j<monsters.length;j++){var e=monsters[j];if(e.dying)continue;
     if(Math.hypot(e.x-hx,e.y-hy)<(e.big?24:14))hurtMon(e,3+(Math.random()*2|0));}}
   else if(player.cls==="rog"){sfx("knife");projs.push({kind:"knife",x:player.x+player.fx*8,y:player.y+player.fy*8,vx:player.fx*150,vy:player.fy*150,dmg:2,life:1.2})}
-  else{sfx("fire");projs.push({kind:"fire",x:player.x+player.fx*8,y:player.y+player.fy*8,vx:player.fx*110,vy:player.fy*110,dmg:4,life:1.6,pi:false})}}
+  else{var target=null,best=150;for(var ti=0;ti<monsters.length;ti++){var tm=monsters[ti];if(tm.dying)continue;var td=Math.hypot(tm.x-player.x,tm.y-player.y);if(td<best){best=td;target=tm}}var aimX=target?(target.x-player.x)/Math.max(1,best):player.fx,aimY=target?(target.y-player.y)/Math.max(1,best):player.fy;sfx("fire");projs.push({kind:"fire",x:player.x+aimX*9,y:player.y+aimY*9,vx:aimX*145,vy:aimY*145,dmg:4,life:1.6,pi:false})}}
  if(i.b&&player.cd<=0&&player.pots>0&&player.hp<player.maxhp){player.pots--;player.hp=Math.min(player.maxhp,player.hp+4);player.cd=0.5;sfx("pot");
   spawnParts(player.x,player.y,6,P.green);}
  for(i=projs.length-1;i>=0;i--){var p=projs[i];p.x+=p.vx*dt;p.y+=p.vy*dt;p.life-=dt;
@@ -346,8 +346,8 @@ function updatePlay(dt){var i=inp(),sp=player.cls==="rog"?60:(player.cls==="sor"
   if(m2.dying>0){m2.dying-=dt;if(m2.dying<=0)monsters.splice(i,1);continue}
   var dx=player.x-m2.x,dy=player.y-m2.y,d=Math.hypot(dx,dy)||1;
   var mvx=0,mvy=0;
-  if(m2.kind==="bat"){var s2=Math.sin(gt*6+m2.ph);
-   if(d<110){mvx=dx/d*m2.spd-dy/d*s2*30;mvy=dy/d*m2.spd+dx/d*s2*30}
+  if(m2.kind==="bat"){var s2=Math.sin(gt*6+m2.ph),radial=d<30?-1:(d>58?1:0),orbit=d<110?24:10;
+   if(d<130){mvx=dx/d*m2.spd*radial-dy/d*s2*orbit;mvy=dy/d*m2.spd*radial+dx/d*s2*orbit}
    else{mvx=Math.cos(m2.ph+gt)*18;mvy=Math.sin(m2.ph*1.3+gt)*18}}
   else{var ag=m2.kind==="butcher"?150:100;if(d<ag)m2.aggro=true;
    if(m2.aggro){var sp2=m2.spd*(m2.kind==="butcher"&&m2.hp<m2.maxhp/2?1.55:1);
@@ -369,9 +369,9 @@ function updatePlay(dt){var i=inp(),sp=player.cls==="rog"?60:(player.cls==="sor"
  for(i=dnums.length-1;i>=0;i--){var dn=dnums[i];dn.y-=22*dt;dn.life-=dt;if(dn.life<=0)dnums.splice(i,1)}
  if(msg)msg.life-=dt;
  var ptx=player.x/TS|0,pty=player.y/TS|0;
- if(map.stairs){var sx=map.stairs.x*TS+8,sy=map.stairs.y*TS+8,nearStairs=Math.hypot(player.x-sx,player.y-sy)<18;
-  if(nearStairs&&i.act){sfx("stairs");enterFloor(floorN+1);
-   if(floorN===3){scene="butcher";st=0;ev={};setMusic(null)}else setMusic("dungeon");}}}
+ if(map.stairs){var sx=map.stairs.x*TS+8,sy=map.stairs.y*TS+8,nearStairs=Math.hypot(player.x-sx,player.y-sy)<22;
+  if(nearStairs&&(i.act||ptx===map.stairs.x&&pty===map.stairs.y)){sfx("stairs");var nextFloor=floorN+1;enterFloor(nextFloor);
+   if(nextFloor===3){scene="butcher";st=0;ev={};setMusic(null)}else setMusic("dungeon");}}}
 
 // ---------- Рендер ----------
 function drawSpr(img,x,y,flip){x=x|0;y=y|0;
