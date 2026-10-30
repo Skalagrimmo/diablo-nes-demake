@@ -250,7 +250,7 @@ function genFloor(fl){var rng=mulberry32(SEED+fl*97);
  if(fl!==3){var lr=rms[rms.length-1],sx=lr.x+(lr.w>>1),sy=lr.y+(lr.h>>1);m[sy*MW+sx]=2;stairs={x:sx,y:sy}}
  var sr=rms[0],spawn={x:(sr.x+(sr.w>>1))*TS+8,y:(sr.y+(sr.h>>1))*TS+8};
  // Сходи ставимо на найдальшу доступну клітину від старту, а не просто в останню кімнату.
- if(fl!==3){var q=new Int32Array(MW*MH),dist=new Int32Array(MW*MH);for(i=0;i<dist.length;i++)dist[i]=-1;
+ if(fl!==3){if(stairs)m[stairs.y*MW+stairs.x]=0;var q=new Int32Array(MW*MH),dist=new Int32Array(MW*MH);for(i=0;i<dist.length;i++)dist[i]=-1;
   var startIdx=(spawn.y/TS|0)*MW+(spawn.x/TS|0),head=0,tail=0,lastIdx=startIdx;q[tail++]=startIdx;dist[startIdx]=0;
   while(head<tail){var cur=q[head++],cx=cur%MW,cy=cur/MW|0;lastIdx=cur;
    var ns=[cur-1,cur+1,cur-MW,cur+MW];for(var ni=0;ni<4;ni++){var nn=ns[ni],nx=nn%MW,ny=nn/MW|0;
@@ -278,7 +278,7 @@ function enterFloor(fl){floorN=fl;blood=[];map=genFloor(fl);rooms=map.rooms;torc
  player.x=map.spawn.x;player.y=map.spawn.y;player.fx=0;player.fy=1;player.dir="down";player.inv=1;
  msg={t:"B"+fl,life:2.2};}
 function startRun(){player.hp=player.maxhp=player.cls==="war"?12:(player.cls==="rog"?9:7);
- player.gold=0;player.pots=3;SEED=(Math.random()*1e9)|0;enterFloor(1);scene="play";st=0;ev={};setMusic("dungeon");}
+ player.gold=0;player.pots=3;player.level=1;player.xp=0;player.xpNext=12;SEED=(Math.random()*1e9)|0;enterFloor(1);scene="play";st=0;ev={};setMusic("dungeon");}
 
 // ---------- Ввід ----------
 var keys={};
