@@ -1,0 +1,985 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>The Last Reactor</title>
+  <style>
+    body {
+      margin: 0;
+      background: #0a0a0a;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+      font-family: monospace;
+    }
+    canvas {
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      width: 100%;
+      max-width: 512px;
+      height: auto;
+      background: #111;
+    }
+    #touch-controls {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      display: none;
+      justify-content: space-between;
+      padding: 12px;
+      pointer-events: none;
+      user-select: none;
+    }
+    .dpad {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+      pointer-events: auto;
+    }
+    .dpad button {
+      width: 54px;
+      height: 54px;
+      background: rgba(255,255,255,0.15);
+      border: 1px solid #777;
+      color: #eee;
+      font-size: 20px;
+      border-radius: 8px;
+    }
+    .actions {
+      display: flex;
+      gap: 10px;
+      align-items: flex-end;
+      pointer-events: auto;
+    }
+    .actions button {
+      width: 62px;
+      height: 62px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.15);
+      border: 1px solid #777;
+      color: #eee;
+      font-size: 13px;
+      font-weight: bold;
+    }
+    @media (pointer: coarse) {
+      #touch-controls { display: flex; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="game" width="256" height="240"></canvas>
+
+  <div id="touch-controls">
+    <div class="dpad">
+      <button data-action="up">▲</button>
+      <button data-action="left">◀</button>
+      <button data-action="down">▼</button>
+      <button data-action="right">▶</button>
+    </div>
+    <div class="actions">
+      <button data-action="attack">A</button>
+      <button data-action="ranged">B</button>
+      <button data-action="interact">ACT</button>
+      <button data-action="inventory">INV</button>
+    </div>
+  </div>
+
+  <script>
+    // ------------------------------------------------------------------
+    // THE LAST REACTOR — single-file vertical slice
+    // ------------------------------------------------------------------
+
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+
+    const TILE = 16;
+    const MAP_W = 16;
+    const MAP_H = 15;
+
+    // Tile IDs
+    const T_FLOOR = 0;
+    const T_WALL = 1;
+    const T_DOOR = 2;
+    const T_VALVE = 3;
+    const T_ALCHEMY = 4;
+    const T_LIFT = 5;
+
+    // Hand-authored slice map
+    // 0 floor, 1 wall, 2 door, 3 valve, 4 alchemy, 5 lift
+    const mapData = [
+      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+      [1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1],
+      [1,0,3,0,0,0,1,0,0,0,0,0,0,0,0,1],
+      [1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1],
+      [1,0,0,4,0,0,1,0,0,0,0,0,0,0,0,1],
+      [1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1],
+      [1,1,1,1,2,1,1,1,1,2,1,1,1,1,1,1],
+      [1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1],
+      [1,0,0,0,0,0,1,0,3,0,0,0,0,0,0,1],
+      [1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1],
+      [1,1,1,1,2,1,1,1,1,2,1,1,1,1,1,1],
+      [1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1],
+      [1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1],
+      [1,0,5,0,0,0,1,0,0,0,0,0,0,0,0,1],
+      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+    ];
+
+    // ------------------------------------------------------------------
+    // Game state
+    // ------------------------------------------------------------------
+    const G = {
+      mode: 'title',            // title | play | inventory | dead | win
+      player: {
+        x: 48, y: 48,
+        w: 12, h: 12,
+        speed: 1.6,
+        hp: 100, maxHp: 100,
+        atk: 10,
+        level: 1,
+        xp: 0,
+        xpNext: 40,
+        facing: 'down',
+        atkCd: 0,
+        rangedCd: 0,
+        bombs: 3,
+        reagents: { ember: 0, iron: 0, sulphur: 0 },
+        equipment: { weapon: null, armor: null },
+        inv: []                 // array of item objects
+      },
+      enemies: [],
+      projectiles: [],
+      items: [],
+      messages: [],
+      valvesActive: 0,
+      liftPowered: false,
+      bossDefeated: false,
+      keys: {},
+      touch: {},
+      lastTime: 0,
+      msgTimer: 0,
+      saved: null
+    };
+
+    // ------------------------------------------------------------------
+    // Simple audio (Web Audio synthesis)
+    // ------------------------------------------------------------------
+    let audioCtx = null;
+    function initAudio() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+    }
+    function beep(freq, dur, type = 'square', vol = 0.05) {
+      if (!audioCtx) return;
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.type = type;
+      o.frequency.value = freq;
+      g.gain.value = vol;
+      o.connect(g);
+      g.connect(audioCtx.destination);
+      o.start();
+      o.stop(audioCtx.currentTime + dur);
+    }
+
+    // ------------------------------------------------------------------
+    // Input
+    // ------------------------------------------------------------------
+    window.addEventListener('keydown', e => {
+      G.keys[e.key.toLowerCase()] = true;
+      if (['arrowup','arrowdown','arrowleft','arrowright',' '].includes(e.key.toLowerCase())) {
+        e.preventDefault();
+      }
+      if (e.key === 'Escape') togglePause();
+      if (e.key.toLowerCase() === 'i') toggleInventory();
+      if (e.key === 'Enter' && G.mode === 'title') startGame();
+      if (e.key === 'Enter' && G.mode === 'dead') startGame();
+      if (e.key === 'Enter' && G.mode === 'win') startGame();
+    });
+    window.addEventListener('keyup', e => {
+      G.keys[e.key.toLowerCase()] = false;
+    });
+
+    // Touch buttons
+    document.querySelectorAll('#touch-controls button').forEach(btn => {
+      const action = btn.dataset.action;
+      const press = e => {
+        e.preventDefault();
+        initAudio();
+        G.touch[action] = true;
+        if (action === 'inventory') toggleInventory();
+        if (action === 'interact') doInteract();
+      };
+      const release = e => {
+        e.preventDefault();
+        G.touch[action] = false;
+      };
+      btn.addEventListener('touchstart', press, { passive: false });
+      btn.addEventListener('touchend', release, { passive: false });
+      btn.addEventListener('mousedown', press);
+      btn.addEventListener('mouseup', release);
+    });
+
+    // ------------------------------------------------------------------
+    // Helpers
+    // ------------------------------------------------------------------
+    function tileAt(px, py) {
+      const tx = Math.floor(px / TILE);
+      const ty = Math.floor(py / TILE);
+      if (tx < 0 || ty < 0 || tx >= MAP_W || ty >= MAP_H) return T_WALL;
+      return mapData[ty][tx];
+    }
+
+    function isSolid(tile) {
+      return tile === T_WALL || tile === T_DOOR;
+    }
+
+    function rectsOverlap(a, b) {
+      return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+    }
+
+    function dist(ax, ay, bx, by) {
+      return Math.hypot(ax - bx, ay - by);
+    }
+
+    function showMsg(text) {
+      G.messages.push({ text, t: 2.5 });
+    }
+
+    // ------------------------------------------------------------------
+    // Map / world mutation
+    // ------------------------------------------------------------------
+    function activateValve(tx, ty) {
+      if (mapData[ty][tx] !== T_VALVE) return;
+      mapData[ty][tx] = T_FLOOR;
+      G.valvesActive++;
+      beep(880, 0.12, 'sine', 0.08);
+      if (G.valvesActive >= 2) {
+        // open the two doors to the lift chamber
+        mapData[6][4] = T_FLOOR;
+        mapData[6][9] = T_FLOOR;
+        mapData[10][4] = T_FLOOR;
+        mapData[10][9] = T_FLOOR;
+        G.liftPowered = true;
+        showMsg('Both pressure valves turn. The lift hums to life.');
+      } else {
+        showMsg('Pressure valve opened. One more remains.');
+      }
+    }
+
+    // ------------------------------------------------------------------
+    // Player
+    // ------------------------------------------------------------------
+    function movePlayer(dx, dy) {
+      const p = G.player;
+      const nx = p.x + dx;
+      const ny = p.y + dy;
+      // horizontal
+      if (!isSolid(tileAt(nx, p.y)) && !isSolid(tileAt(nx + p.w - 1, p.y)) &&
+          !isSolid(tileAt(nx, p.y + p.h - 1)) && !isSolid(tileAt(nx + p.w - 1, p.y + p.h - 1))) {
+        p.x = nx;
+      }
+      // vertical
+      if (!isSolid(tileAt(p.x, ny)) && !isSolid(tileAt(p.x + p.w - 1, ny)) &&
+          !isSolid(tileAt(p.x, ny + p.h - 1)) && !isSolid(tileAt(p.x + p.w - 1, ny + p.h - 1))) {
+        p.y = ny;
+      }
+      if (dx > 0) p.facing = 'right';
+      else if (dx < 0) p.facing = 'left';
+      else if (dy > 0) p.facing = 'down';
+      else if (dy < 0) p.facing = 'up';
+    }
+
+    function playerAttack() {
+      const p = G.player;
+      if (p.atkCd > 0) return;
+      p.atkCd = 0.35;
+      beep(220, 0.08, 'sawtooth', 0.04);
+
+      let hx = p.x, hy = p.y, hw = p.w, hh = p.h;
+      if (p.facing === 'right') { hx = p.x + p.w; hw = 14; hy = p.y + 2; hh = p.h - 4; }
+      else if (p.facing === 'left') { hx = p.x - 14; hw = 14; hy = p.y + 2; hh = p.h - 4; }
+      else if (p.facing === 'down') { hy = p.y + p.h; hh = 14; hx = p.x + 2; hw = p.w - 4; }
+      else if (p.facing === 'up') { hy = p.y - 14; hh = 14; hx = p.x + 2; hw = p.w - 4; }
+
+      const hitbox = { x: hx, y: hy, w: hw, h: hh };
+      G.enemies.forEach(e => {
+        if (!e.dead && rectsOverlap(hitbox, { x: e.x, y: e.y, w: e.w, h: e.h })) {
+          damageEnemy(e, p.atk);
+        }
+      });
+    }
+
+    function playerThrowBomb() {
+      const p = G.player;
+      if (p.rangedCd > 0 || p.bombs <= 0) return;
+      p.rangedCd = 0.6;
+      p.bombs--;
+      beep(440, 0.1, 'triangle', 0.05);
+      let dx = 0, dy = 0;
+      if (p.facing === 'right') dx = 2;
+      else if (p.facing === 'left') dx = -2;
+      else if (p.facing === 'down') dy = 2;
+      else if (p.facing === 'up') dy = -2;
+
+      G.projectiles.push({
+        x: p.x + p.w / 2,
+        y: p.y + p.h / 2,
+        dx, dy,
+        w: 5, h: 5,
+        friendly: true,
+        dmg: p.atk + 5,
+        life: 1.2
+      });
+    }
+
+    function doInteract() {
+      if (G.mode !== 'play') return;
+      const p = G.player;
+      const cx = p.x + p.w / 2;
+      const cy = p.y + p.h / 2;
+      const tx = Math.floor(cx / TILE);
+      const ty = Math.floor(cy / TILE);
+
+      // check adjacent tiles
+      const candidates = [
+        [tx, ty], [tx + 1, ty], [tx - 1, ty], [tx, ty + 1], [tx, ty - 1]
+      ];
+      for (const [x, y] of candidates) {
+        if (x < 0 || y < 0 || x >= MAP_W || y >= MAP_H) continue;
+        const t = mapData[y][x];
+        if (t === T_VALVE) {
+          activateValve(x, y);
+          return;
+        }
+        if (t === T_LIFT && G.liftPowered) {
+          // lift takes player to boss room (simple teleport)
+          p.x = 16 * 13 + 2;
+          p.y = 16 * 12 + 2;
+          showMsg('The lift descends into the reactor access shaft.');
+          beep(110, 0.4, 'sine', 0.06);
+          return;
+        }
+        if (t === T_ALCHEMY) {
+          openAlchemy();
+          return;
+        }
+      }
+      showMsg('Nothing to interact with here.');
+    }
+
+    // ------------------------------------------------------------------
+    // Alchemy
+    // ------------------------------------------------------------------
+    function openAlchemy() {
+      // Simple: consume 1 ember + 1 iron to make a healing elixir
+      const p = G.player;
+      if (p.reagents.ember > 0 && p.reagents.iron > 0) {
+        p.reagents.ember--;
+        p.reagents.iron--;
+        const heal = 40;
+        p.hp = Math.min(p.maxHp, p.hp + heal);
+        showMsg('Alchemy: Healing Elixir brewed. +40 HP.');
+        beep(660, 0.15, 'sine', 0.07);
+      } else {
+        showMsg('Alchemy requires 1 Emberbloom and 1 Ironroot.');
+      }
+    }
+
+    // ------------------------------------------------------------------
+    // Enemies
+    // ------------------------------------------------------------------
+    function spawnEnemy(type, x, y) {
+      const base = { x, y, w: 12, h: 12, dead: false, hitTimer: 0 };
+      if (type === 'hound') {
+        Object.assign(base, {
+          type: 'hound', hp: 20, maxHp: 20, speed: 1.0,
+          dmg: 6, atkCd: 0, xp: 12
+        });
+      } else if (type === 'sentinel') {
+        Object.assign(base, {
+          type: 'sentinel', hp: 30, maxHp: 30, speed: 0,
+          dmg: 8, atkCd: 0, xp: 18, shootCd: 1.5
+        });
+      } else if (type === 'warden') {
+        Object.assign(base, {
+          type: 'warden', hp: 120, maxHp: 120, speed: 0.5,
+          dmg: 14, atkCd: 0, xp: 100, shootCd: 2.0, isBoss: true
+        });
+      }
+      G.enemies.push(base);
+    }
+
+    function damageEnemy(e, amount) {
+      if (e.dead) return;
+      e.hp -= amount;
+      e.hitTimer = 0.15;
+      beep(160, 0.06, 'square', 0.05);
+      if (e.hp <= 0) {
+        e.dead = true;
+        addXP(e.xp);
+        beep(120, 0.2, 'sawtooth', 0.06);
+        // loot
+        if (Math.random() < 0.4) dropItem(e.x, e.y);
+        if (e.type === 'warden') {
+          G.bossDefeated = true;
+          showMsg('The Reactor Warden collapses. The core is silent.');
+          G.mode = 'win';
+          saveGame();
+        }
+      }
+    }
+
+    function updateEnemies(dt) {
+      const p = G.player;
+      G.enemies.forEach(e => {
+        if (e.dead) return;
+        e.hitTimer = Math.max(0, e.hitTimer - dt);
+        const d = dist(e.x, e.y, p.x, p.y);
+
+        if (e.type === 'hound') {
+          if (d < 110) {
+            const dx = (p.x - e.x) / d;
+            const dy = (p.y - e.y) / d;
+            e.x += dx * e.speed;
+            e.y += dy * e.speed;
+          }
+          if (d < 18 && e.atkCd <= 0) {
+            e.atkCd = 0.8;
+            damagePlayer(e.dmg);
+          }
+        } else if (e.type === 'sentinel' || e.type === 'warden') {
+          e.shootCd -= dt;
+          if (d < 160 && e.shootCd <= 0) {
+            e.shootCd = e.type === 'warden' ? 1.8 : 2.2;
+            const dx = (p.x - e.x) / d;
+            const dy = (p.y - e.y) / d;
+            G.projectiles.push({
+              x: e.x + e.w / 2, y: e.y + e.h / 2,
+              dx: dx * 1.5, dy: dy * 1.5,
+              w: 6, h: 6,
+              friendly: false,
+              dmg: e.dmg,
+              life: 2.5
+            });
+          }
+          if (e.type === 'warden' && d < 40 && e.atkCd <= 0) {
+            e.atkCd = 1.4;
+            damagePlayer(e.dmg);
+          }
+        }
+        e.atkCd = Math.max(0, e.atkCd - dt);
+      });
+    }
+
+    function damagePlayer(amount) {
+      const p = G.player;
+      // simple armour reduction
+      const armorReduction = p.equipment.armor ? 3 : 0;
+      const real = Math.max(1, amount - armorReduction);
+      p.hp -= real;
+      beep(80, 0.15, 'sawtooth', 0.08);
+      if (p.hp <= 0) {
+        p.hp = 0;
+        G.mode = 'dead';
+        saveGame();
+      }
+    }
+
+    // ------------------------------------------------------------------
+    // Projectiles
+    // ------------------------------------------------------------------
+    function updateProjectiles(dt) {
+      G.projectiles = G.projectiles.filter(pr => {
+        pr.life -= dt;
+        pr.x += pr.dx;
+        pr.y += pr.dy;
+
+        if (pr.life <= 0) return false;
+
+        // hit walls
+        if (tileAt(pr.x, pr.y) === T_WALL) return false;
+
+        if (pr.friendly) {
+          for (const e of G.enemies) {
+            if (!e.dead && rectsOverlap({ x: pr.x, y: pr.y, w: pr.w, h: pr.h }, e)) {
+              damageEnemy(e, pr.dmg);
+              return false;
+            }
+          }
+        } else {
+          const p = G.player;
+          if (rectsOverlap({ x: pr.x, y: pr.y, w: pr.w, h: pr.h }, { x: p.x, y: p.y, w: p.w, h: p.h })) {
+            damagePlayer(pr.dmg);
+            return false;
+          }
+        }
+        return true;
+      });
+    }
+
+    // ------------------------------------------------------------------
+    // Items & progression
+    // ------------------------------------------------------------------
+    function dropItem(x, y) {
+      const roll = Math.random();
+      let item;
+      if (roll < 0.35) {
+        item = { name: 'Emberbloom', type: 'reagent', key: 'ember', x, y, w: 8, h: 8 };
+      } else if (roll < 0.7) {
+        item = { name: 'Ironroot', type: 'reagent', key: 'iron', x, y, w: 8, h: 8 };
+      } else if (roll < 0.9) {
+        item = { name: 'Sulphur', type: 'reagent', key: 'sulphur', x, y, w: 8, h: 8 };
+      } else {
+        item = { name: 'Gearblade', type: 'weapon', atk: 5, x, y, w: 10, h: 10 };
+      }
+      G.items.push(item);
+    }
+
+    function pickupItems() {
+      const p = G.player;
+      G.items = G.items.filter(it => {
+        if (rectsOverlap({ x: p.x, y: p.y, w: p.w, h: p.h }, it)) {
+          if (it.type === 'reagent') {
+            p.reagents[it.key]++;
+            showMsg('Picked up ' + it.name);
+          } else if (it.type === 'weapon') {
+            p.inv.push(it);
+            showMsg('Found ' + it.name + ' (equip in inventory)');
+          }
+          beep(1046, 0.07, 'sine', 0.04);
+          return false;
+        }
+        return true;
+      });
+    }
+
+    function addXP(amount) {
+      const p = G.player;
+      p.xp += amount;
+      while (p.xp >= p.xpNext) {
+        p.xp -= p.xpNext;
+        p.level++;
+        p.xpNext = Math.floor(p.xpNext * 1.5);
+        p.maxHp += 10;
+        p.hp = p.maxHp;
+        p.atk += 2;
+        showMsg('Level ' + p.level + '! Max HP and attack increased.');
+        beep(523, 0.1, 'sine', 0.06);
+        setTimeout(() => beep(659, 0.1, 'sine', 0.06), 120);
+        setTimeout(() => beep(784, 0.15, 'sine', 0.06), 240);
+      }
+    }
+
+    function equipItem(item) {
+      const p = G.player;
+      if (item.type === 'weapon') {
+        if (p.equipment.weapon) {
+          // unequip old
+          p.equipment.weapon = null;
+        }
+        p.equipment.weapon = item;
+        p.atk = 10 + (p.level - 1) * 2 + item.atk;
+        showMsg('Equipped ' + item.name);
+      }
+      // remove from inventory (weapons are consumed into equipment)
+      p.inv = p.inv.filter(i => i !== item);
+    }
+
+    // ------------------------------------------------------------------
+    // Save / load
+    // ------------------------------------------------------------------
+    function saveGame() {
+      try {
+        const p = G.player;
+        const data = {
+          hp: p.hp, maxHp: p.maxHp, atk: p.atk,
+          level: p.level, xp: p.xp, xpNext: p.xpNext,
+          bombs: p.bombs,
+          reagents: p.reagents,
+          equipment: p.equipment,
+          inv: p.inv,
+          valvesActive: G.valvesActive,
+          liftPowered: G.liftPowered,
+          bossDefeated: G.bossDefeated,
+          mode: G.mode
+        };
+        localStorage.setItem('lastReactorSave', JSON.stringify(data));
+      } catch (e) { /* ignore */ }
+    }
+
+    function loadGame() {
+      try {
+        const raw = localStorage.getItem('lastReactorSave');
+        if (!raw) return false;
+        const d = JSON.parse(raw);
+        const p = G.player;
+        p.hp = d.hp; p.maxHp = d.maxHp; p.atk = d.atk;
+        p.level = d.level; p.xp = d.xp; p.xpNext = d.xpNext;
+        p.bombs = d.bombs;
+        p.reagents = d.reagents;
+        p.equipment = d.equipment;
+        p.inv = d.inv || [];
+        G.valvesActive = d.valvesActive;
+        G.liftPowered = d.liftPowered;
+        G.bossDefeated = d.bossDefeated;
+        G.mode = d.mode === 'dead' ? 'dead' : 'play';
+        return true;
+      } catch (e) { return false; }
+    }
+
+    // ------------------------------------------------------------------
+    // Game start / reset
+    // ------------------------------------------------------------------
+    function startGame() {
+      initAudio();
+      G.mode = 'play';
+      const p = G.player;
+      p.x = 48; p.y = 48;
+      p.hp = p.maxHp;
+      p.atkCd = 0; p.rangedCd = 0;
+      p.bombs = 3;
+      G.enemies = [];
+      G.projectiles = [];
+      G.items = [];
+      G.messages = [];
+      G.valvesActive = 0;
+      G.liftPowered = false;
+      G.bossDefeated = false;
+
+      // Reset map doors / valves
+      mapData[6][4] = T_DOOR;
+      mapData[6][9] = T_DOOR;
+      mapData[10][4] = T_DOOR;
+      mapData[10][9] = T_DOOR;
+      mapData[2][2] = T_VALVE;
+      mapData[8][8] = T_VALVE;
+
+      // Spawn enemies
+      spawnEnemy('hound', 16 * 12 + 2, 16 * 2 + 2);
+      spawnEnemy('hound', 16 * 13 + 2, 16 * 8 + 2);
+      spawnEnemy('sentinel', 16 * 12 + 2, 16 * 12 + 2);
+      spawnEnemy('sentinel', 16 * 3 + 2, 16 * 8 + 2);
+
+      // Boss is spawned when the player rides the lift
+      // (we spawn it immediately but it stays in the bottom room)
+      spawnEnemy('warden', 16 * 13 + 2, 16 * 13 + 2);
+
+      showMsg('The Last Reactor — find the two pressure valves.');
+    }
+
+    // ------------------------------------------------------------------
+    // UI toggles
+    // ------------------------------------------------------------------
+    function toggleInventory() {
+      if (G.mode === 'play') G.mode = 'inventory';
+      else if (G.mode === 'inventory') G.mode = 'play';
+    }
+
+    function togglePause() {
+      if (G.mode === 'play') G.mode = 'pause';
+      else if (G.mode === 'pause') G.mode = 'play';
+    }
+
+    // ------------------------------------------------------------------
+    // Update
+    // ------------------------------------------------------------------
+    function update(dt) {
+      if (G.mode === 'title' || G.mode === 'dead' || G.mode === 'win') return;
+      if (G.mode === 'pause' || G.mode === 'inventory') return;
+
+      const p = G.player;
+      p.atkCd = Math.max(0, p.atkCd - dt);
+      p.rangedCd = Math.max(0, p.rangedCd - dt);
+
+      // keyboard movement
+      let dx = 0, dy = 0;
+      if (G.keys['arrowleft'] || G.keys['a'] || G.touch['left']) dx -= p.speed;
+      if (G.keys['arrowright'] || G.keys['d'] || G.touch['right']) dx += p.speed;
+      if (G.keys['arrowup'] || G.keys['w'] || G.touch['up']) dy -= p.speed;
+      if (G.keys['arrowdown'] || G.keys['s'] || G.touch['down']) dy += p.speed;
+      if (dx || dy) movePlayer(dx, dy);
+
+      // actions
+      if (G.keys['z'] || G.keys[' '] || G.touch['attack']) playerAttack();
+      if (G.keys['x'] || G.touch['ranged']) playerThrowBomb();
+      if (G.keys['e'] || G.touch['interact']) { /* handled in touch/button, keyboard handled below */ }
+
+      // keyboard interact (edge-triggered)
+      if (G.keys['e'] && !G._eHeld) { doInteract(); G._eHeld = true; }
+      if (!G.keys['e']) G._eHeld = false;
+
+      updateEnemies(dt);
+      updateProjectiles(dt);
+      pickupItems();
+
+      // message timers
+      G.messages = G.messages.filter(m => {
+        m.t -= dt;
+        return m.t > 0;
+      });
+    }
+
+    // ------------------------------------------------------------------
+    // Render
+    // ------------------------------------------------------------------
+    function render() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      if (G.mode === 'title') {
+        renderTitle();
+        return;
+      }
+      if (G.mode === 'dead') {
+        renderDeath();
+        return;
+      }
+      if (G.mode === 'win') {
+        renderWin();
+        return;
+      }
+
+      // map
+      for (let y = 0; y < MAP_H; y++) {
+        for (let x = 0; x < MAP_W; x++) {
+          const t = mapData[y][x];
+          const px = x * TILE;
+          const py = y * TILE;
+          if (t === T_WALL) {
+            ctx.fillStyle = '#2a2a30';
+            ctx.fillRect(px, py, TILE, TILE);
+            ctx.fillStyle = '#3a3a45';
+            ctx.fillRect(px + 2, py + 2, TILE - 4, TILE - 4);
+          } else if (t === T_DOOR) {
+            ctx.fillStyle = '#5a4a2a';
+            ctx.fillRect(px, py, TILE, TILE);
+            ctx.fillStyle = '#8a6a3a';
+            ctx.fillRect(px + 2, py + 2, TILE - 4, TILE - 4);
+          } else if (t === T_VALVE) {
+            ctx.fillStyle = '#3a3a30';
+            ctx.fillRect(px, py, TILE, TILE);
+            ctx.fillStyle = '#c0a040';
+            ctx.beginPath();
+            ctx.arc(px + 8, py + 8, 6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#222';
+            ctx.fillRect(px + 7, py + 2, 2, 12);
+            ctx.fillRect(px + 2, py + 7, 12, 2);
+          } else if (t === T_ALCHEMY) {
+            ctx.fillStyle = '#2a1a2a';
+            ctx.fillRect(px, py, TILE, TILE);
+            ctx.fillStyle = '#60e0a0';
+            ctx.fillRect(px + 4, py + 4, 8, 8);
+          } else if (t === T_LIFT) {
+            ctx.fillStyle = '#1a2a3a';
+            ctx.fillRect(px, py, TILE, TILE);
+            ctx.fillStyle = '#80c0ff';
+            ctx.fillRect(px + 3, py + 3, 10, 10);
+          } else {
+            // floor
+            ctx.fillStyle = '#1a1a1a';
+            ctx.fillRect(px, py, TILE, TILE);
+            ctx.fillStyle = '#252525';
+            ctx.fillRect(px + 1, py + 1, TILE - 2, TILE - 2);
+          }
+        }
+      }
+
+      // items
+      G.items.forEach(it => {
+        ctx.fillStyle = it.type === 'reagent' ? '#60ff60' : '#ffcc00';
+        ctx.fillRect(it.x, it.y, it.w, it.h);
+      });
+
+      // enemies
+      G.enemies.forEach(e => {
+        if (e.dead) return;
+        if (e.hitTimer > 0) {
+          ctx.fillStyle = '#fff';
+        } else if (e.type === 'hound') {
+          ctx.fillStyle = '#c04020';
+        } else if (e.type === 'sentinel') {
+          ctx.fillStyle = '#40a0c0';
+        } else {
+          ctx.fillStyle = '#a020a0';
+        }
+        ctx.fillRect(e.x, e.y, e.w, e.h);
+        // simple health bar for boss
+        if (e.isBoss) {
+          ctx.fillStyle = '#400';
+          ctx.fillRect(e.x - 2, e.y - 6, e.w + 4, 4);
+          ctx.fillStyle = '#f00';
+          ctx.fillRect(e.x - 2, e.y - 6, (e.w + 4) * (e.hp / e.maxHp), 4);
+        }
+      });
+
+      // player
+      const p = G.player;
+      ctx.fillStyle = '#e0e0e0';
+      ctx.fillRect(p.x, p.y, p.w, p.h);
+      ctx.fillStyle = '#3060ff';
+      ctx.fillRect(p.x + 2, p.y + 2, p.w - 4, p.h - 4);
+
+      // projectiles
+      G.projectiles.forEach(pr => {
+        ctx.fillStyle = pr.friendly ? '#ffcc00' : '#ff4040';
+        ctx.fillRect(pr.x, pr.y, pr.w, pr.h);
+      });
+
+      renderHUD();
+      renderMessages();
+
+      if (G.mode === 'inventory') renderInventory();
+      if (G.mode === 'pause') renderPause();
+    }
+
+    function renderHUD() {
+      const p = G.player;
+      // health bar
+      ctx.fillStyle = '#400';
+      ctx.fillRect(4, 4, 100, 8);
+      ctx.fillStyle = '#f00';
+      ctx.fillRect(4, 4, 100 * (p.hp / p.maxHp), 8);
+      // xp bar
+      ctx.fillStyle = '#004';
+      ctx.fillRect(4, 14, 100, 4);
+      ctx.fillStyle = '#08f';
+      ctx.fillRect(4, 14, 100 * (p.xp / p.xpNext), 4);
+      // text
+      ctx.fillStyle = '#fff';
+      ctx.font = '8px monospace';
+      ctx.fillText('Lv' + p.level + '  Bombs:' + p.bombs, 4, 28);
+      ctx.fillText('E:' + p.reagents.ember + ' I:' + p.reagents.iron + ' S:' + p.reagents.sulphur, 4, 38);
+      ctx.fillText('Valves ' + G.valvesActive + '/2', 4, 48);
+      if (G.liftPowered) ctx.fillText('LIFT POWERED', 4, 58);
+    }
+
+    function renderMessages() {
+      ctx.fillStyle = '#ffd';
+      ctx.font = '8px monospace';
+      G.messages.forEach((m, i) => {
+        ctx.fillText(m.text, 4, 80 + i * 10);
+      });
+    }
+
+    function renderInventory() {
+      ctx.fillStyle = 'rgba(0,0,0,0.85)';
+      ctx.fillRect(20, 20, 216, 200);
+      ctx.fillStyle = '#fff';
+      ctx.font = '10px monospace';
+      ctx.fillText('INVENTORY', 80, 36);
+      const p = G.player;
+      let y = 52;
+      if (p.equipment.weapon) {
+        ctx.fillText('Weapon: ' + p.equipment.weapon.name + ' (+' + p.equipment.weapon.atk + ')', 30, y);
+        y += 14;
+      }
+      if (p.equipment.armor) {
+        ctx.fillText('Armor: ' + p.equipment.armor.name, 30, y);
+        y += 14;
+      }
+      p.inv.forEach((it, i) => {
+        ctx.fillText((i + 1) + '. ' + it.name + (it.type === 'weapon' ? ' (+' + it.atk + ')' : ''), 30, y);
+        y += 12;
+      });
+      ctx.fillText('Press 1-9 to equip item, I to close', 30, 210);
+    }
+
+    function renderPause() {
+      ctx.fillStyle = 'rgba(0,0,0,0.7)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#fff';
+      ctx.font = '12px monospace';
+      ctx.fillText('PAUSED', 100, 120);
+    }
+
+    function renderTitle() {
+      ctx.fillStyle = '#111';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#c0a040';
+      ctx.font = '14px monospace';
+      ctx.fillText('THE LAST REACTOR', 48, 60);
+      ctx.fillStyle = '#aaa';
+      ctx.font = '8px monospace';
+      ctx.fillText('A gothic-industrial alchemical descent', 36, 80);
+      ctx.fillStyle = '#fff';
+      ctx.font = '10px monospace';
+      ctx.fillText('ENTER / START', 80, 120);
+      const saved = localStorage.getItem('lastReactorSave');
+      if (saved) {
+        ctx.fillText('C — Continue', 88, 140);
+      }
+      ctx.font = '8px monospace';
+      ctx.fillStyle = '#888';
+      ctx.fillText('WASD/Arrows move  Z/Space attack  X bomb', 16, 180);
+      ctx.fillText('E interact  I inventory  Esc pause', 16, 192);
+    }
+
+    function renderDeath() {
+      ctx.fillStyle = '#200';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#f44';
+      ctx.font = '14px monospace';
+      ctx.fillText('YOU DIED', 88, 100);
+      ctx.fillStyle = '#fff';
+      ctx.font = '10px monospace';
+      ctx.fillText('Enter to restart', 80, 130);
+    }
+
+    function renderWin() {
+      ctx.fillStyle = '#020';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#0f8';
+      ctx.font = '12px monospace';
+      ctx.fillText('THE REACTOR IS SILENT', 40, 90);
+      ctx.fillStyle = '#fff';
+      ctx.font = '8px monospace';
+      ctx.fillText('You have ended the Warden’s vigil.', 48, 110);
+      ctx.fillText('Enter to play again.', 80, 130);
+    }
+
+    // ------------------------------------------------------------------
+    // Main loop
+    // ------------------------------------------------------------------
+    function loop(ts) {
+      const dt = Math.min(0.05, (ts - G.lastTime) / 1000 || 0);
+      G.lastTime = ts;
+
+      if (G.mode === 'title') {
+        if (G.keys['c'] || G.keys['с']) {
+          if (loadGame()) G.mode = 'play';
+        }
+      }
+
+      // equip from inventory (number keys)
+      if (G.mode === 'inventory') {
+        for (let i = 1; i <= 9; i++) {
+          if (G.keys[String(i)]) {
+            const item = G.player.inv[i - 1];
+            if (item && item.type === 'weapon') {
+              equipItem(item);
+              G.mode = 'play';
+            }
+            G.keys[String(i)] = false;
+          }
+        }
+      }
+
+      update(dt);
+      render();
+      requestAnimationFrame(loop);
+    }
+
+    // Start
+    requestAnimationFrame(loop);
+
+    // Auto-save on unload
+    window.addEventListener('beforeunload', saveGame);
+  </script>
+</body>
+</html>
