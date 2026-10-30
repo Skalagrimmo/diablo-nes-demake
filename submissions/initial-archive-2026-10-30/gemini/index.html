@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>The Last Reactor - Gothic Industrial Fantasy</title>
+    <style>
+        * { box-sizing: border-box; user-select: none; -webkit-user-select: none; }
+        body {
+            background-color: #0d0f12;
+            color: #c5cbd3;
+            font-family: 'Courier New', Courier, monospace;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+        #game-container {
+            position: relative;
+            width: 100%;
+            max-width: 640px;
+            aspect-ratio: 4 / 3;
+            background: #15181e;
+            box-shadow: 0 0 30px rgba(184, 115, 51, 0.2);
+            border: 3px solid #3a414d;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        canvas {
+            width: 100%;
+            height: 100%;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+            background: #0a0c10;
+            display: block;
+        }
+        #ui-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 10px;
+            font-size: 12px;
+            text-shadow: 1px 1px #000;
+        }
+        .hud-row {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            background: rgba(15, 18, 24, 0.85);
+            padding: 6px 10px;
+            border: 1px solid #3a414d;
+            border-radius: 3px;
+        }
+        .highlight { color: #e69542; font-weight: bold; }
+        .danger { color: #d9534f; font-weight: bold; }
+        .success { color: #5cb85c; font-weight: bold; }
+        
+        #touch-controls {
+            display: none;
+            position: absolute;
+            bottom: 10px;
+            left: 0;
+            width: 100%;
+            justify-content: space-between;
+            padding: 0 15px;
+            pointer-events: auto;
+        }
+        .touch-group { display: flex; gap: 8px; }
+        .t-btn {
+            background: rgba(40, 46, 58, 0.85);
+            border: 2px solid #b87333;
+            color: #f0f0f0;
+            font-size: 16px;
+            font-weight: bold;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.5);
+        }
+        .t-btn:active { background: #b87333; color: #111; }
+        
+        #screen-message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(15, 18, 24, 0.95);
+            border: 2px solid #b87333;
+            padding: 20px;
+            text-align: center;
+            max-width: 80%;
+            display: none;
+            pointer-events: auto;
+            box-shadow: 0 0 20px rgba(184,115,51,0.4);
+        }
+        button.menu-btn {
+            background: #b87333;
+            color: #0d0f12;
+            border: none;
+            padding: 8px 16px;
+            font-family: inherit;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 10px;
+            border-radius: 3px;
+        }
+        button.menu-btn:hover { background: #d98844; }
+        
+        @media (pointer: coarse) {
+            #touch-controls { display: flex; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="gameCanvas" width="320" height="240"></canvas>
+    
+    <div id="ui-overlay">
+        <div class="hud-row" id="hud-top" style="display:none;">
+            <div>HP: <span id="hud-hp" class="danger">100/100</span></div>
+            <div>Sector: <span id="hud-sector" class="highlight">Upper Gate</span></div>
+            <div>Gold: <span id="hud-gold" class="highlight">0</span></div>
+            <div>Reagents: <span id="hud-reagents" class="highlight">0</span></div>
+        </div>
+        <div class="hud-row" id="hud-bottom" style="display:none;">
+            <div>Level: <span id="hud-level">1</span> (<span id="hud-xp">0</span> XP)</div>
+            <div>Weapon: <span id="hud-weapon" class="highlight">Piston Blade</span></div>
+            <div>Valve: <span id="hud-valve" class="danger">Locked</span></div>
+        </div>
+    </div>
+
+    <div id="touch-controls">
+        <div class="touch-group">
+            <div class="t-btn" id="btn-left">←</div>
+            <div class="t-btn" id="btn-up">↑</div>
+            <div class="t-btn" id="btn-down">↓</div>
+            <div class="t-btn" id="btn-right">→</div>
+        </div>
+        <div class="touch-group">
+            <div class="t-btn" id="btn-interact" title="Interact/Valve">⚙</div>
+            <div class="t-btn" id="btn-alchemy" title="Alchemy Craft">🧪</div>
+            <div class="t-btn" id="btn-attack" title="Attack">⚔</div>
+        </div>
+    </div>
+
+    <div id="screen-message">
+        <h2 id="msg-title" class="highlight">THE LAST REACTOR</h2>
+        <p id="msg-text">Gothic Industrial Fantasy Demake</p>
+        <div id="msg-actions"></div>
+    </div>
+</div>
+
+<script>
+/**
+ * THE LAST REACTOR - Independent Game-Development Benchmark
+ * Built upon baseline architecture with gothic industrial fantasy overhaul,
+ * alchemical crafting, environmental valves, multi-sector world, and boss encounter.
+ */
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+// Game States: TITLE, CLASS_SELECT, PLAYING, INVENTORY, ALCHEMY, GAMEOVER, VICTORY
+let gameState = 'TITLE';
+
+// Audio Context helper for Web Audio API industrial soundscapes
+let audioCtx = null;
+function initAudio() {
+    if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+}
+function playSound(type) {
+    if (!audioCtx) return;
+    try {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        const now = audioCtx.currentTime;
+
+        if (type === 'hit') {
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(150, now);
+            osc.frequency.exponentialRampToValueAtTime(40, now + 0.15);
+            gain.gain.setValueAtTime(0.2, now);
+            gain.gain.linearRampToValueAtTime(0.01, now + 0.15);
+            osc.start(now);
+            osc.stop(now + 0.15);
+        } else if (type === 'attack') {
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(300, now);
+            osc.frequency.exponentialRampToValueAtTime(100, now + 0.1);
+            gain.gain.setValueAtTime(0.15, now);
+            gain.gain.linearRampToValueAtTime(0.01, now + 0.1);
+            osc.start(now);
+            osc.stop(now + 0.1);
+        } else if (type === 'valve') {
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(80, now);
+            osc.frequency.setValueAtTime(220, now + 0.1);
+            osc.frequency.setValueAtTime(120, now + 0.2);
+            gain.gain.setValueAtTime(0.2, now);
+            gain.gain.linearRampToValueAtTime(0.01, now + 0.3);
+            osc.start(now);
+            osc.stop(now + 0.3);
+        } else if (type === 'pickup') {
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(440, now);
+            osc.frequency.exponentialRampToValueAtTime(880, now + 0.12);
+            gain.gain.setValueAtTime(0.15, now);
+            gain.gain.linearRampToValueAtTime(0.01, now + 0.12);
+            osc.start(now);
+            osc.stop(now + 0.12);
+        } else if (type === 'boss') {
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(70, now);
+            osc.frequency.linearRampToValueAtTime(50, now + 0.5);
+            gain.gain.setValueAtTime(0.3, now);
+            gain.gain.linearRampToValueAtTime(0.01, now + 0.5);
+            osc.start(now);
+            osc.stop(now + 0.5);
+        }
+    } catch(e) {}
+}
+
+// Input state
+const keys = {};
+window.addEventListener('keydown', e => {
+    keys[e.key.toLowerCase()] = true;
+    if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(e.key.toLowerCase())) {
+        e.preventDefault();
+    }
+    handleKeyPress(e.key.toLowerCase());
+});
+window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+
+// Touch handlers
+function bindTouch(id, keyName) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('touchstart', e => { e.preventDefault(); keys[keyName] = true; handleTouchAction(keyName); });
+    el.addEventListener('touchend', e => { e.preventDefault(); keys[keyName] = false; });
+}
+bindTouch('btn-left', 'arrowleft');
+bindTouch('btn-up', 'arrowup');
+bindTouch('btn-down', 'arrowdown');
+bindTouch('btn-right', 'arrowright');
+document.getElementById('btn-attack').addEventListener('touchstart', e => { e.preventDefault(); playerAttack(); });
+document.getElementById('btn-interact').addEventListener('touchstart', e => { e.preventDefault(); playerInteract(); });
+document.getElementById('btn-alchemy').addEventListener('touchstart', e => { e.preventDefault(); openAlchemyMenu(); });
+
+function handleKeyPress(k) {
+    initAudio();
+    if (gameState === 'PLAYING') {
+        if (k === ' ' || k === 'j') playerAttack();
+        if (k === 'e' || k === 'enter') playerInteract();
+        if (k === 'i') openInventory();
+        if (k === 'a') openAlchemyMenu();
+        if (k === 'q') usePotion();
+    }
+}
+
+function handleTouchAction(k) {
+    initAudio();
+    if (gameState === 'PLAYING') {
+        if (k === 'arrowup' || k === 'arrowdown' || k === 'arrowleft' || k === 'arrowright') {
+            // Movement handled in update loop
+        }
+    }
+}
+
+// Game Data & Player
+let player = {
+    x: 48, y: 48, size: 12, speed: 2.0,
+    hp: 100, maxHp: 100, level: 1, xp: 0, gold: 0, reagents: 0, potions: 2,
+    classType: 'Vanguard',
+    weaponName: 'Piston Blade', weaponDmg: 15, armor: 5,
+    facing: 'down'
+};
+
+let currentSector = 0; // 0: Upper Gate, 1: Industrial Belt, 2: Sealed Lab, 3: Reactor Core
+const sectorNames = ['Upper Gate', 'Industrial Belt', 'Sealed Laboratories', 'The Overclocked Core'];
+
+let enemies = [];
+let items = [];
+let particles = [];
+let environmentalObjects = []; // valves, doors, consoles
+let valveOpen = false;
+let bossDefeated = false;
+
+// Initialize Sectors / Map entities
+function loadSector(secIdx) {
+    currentSector = secIdx;
+    enemies = [];
+    items = [];
+    particles = [];
+    environmentalObjects = [];
+    valveOpen = false;
+
+    // Add environmental valves and gates
+    environmentalObjects.push({
+        x: 140, y: 100, type: 'valve', state: false, 
+        label: 'Steam Pressure Valve'
+    });
+    environmentalObjects.push({
+        x: 260, y: 120, type: 'door', state: false, 
+        label: 'Bulkhead Security Gate'
+    });
+
+    if (secIdx === 0) {
+        // Upper Gate
+        player.x = 40; player.y = 40;
+        enemies.push({ x: 120, y: 80, type: 'crawler', hp: 30, maxHp: 30, dmg: 8, speed: 1.2, size: 10 });
+        enemies.push({ x: 200, y: 160, type: 'drone', hp: 20, maxHp: 20, dmg: 6, speed: 1.0, size: 10 });
+        items.push({ x: 150, y: 150, type: 'gold', val: 25 });
+        items.push({ x: 220, y: 60, type: 'reagent', val: 2 });
+    } else if (secIdx === 1) {
+        // Industrial Belt
+        player.x = 40; player.y = 40;
+        enemies.push({ x: 100, y: 100, type: 'crawler', hp: 45, maxHp: 45, dmg: 12, speed: 1.4, size: 10 });
+        enemies.push({ x: 180, y: 80, type: 'drone', hp: 30, maxHp: 30, dmg: 10, speed: 1.2, size: 10 });
+        enemies.push({ x: 240, y: 180, type: 'cultist', hp: 40, maxHp: 40, dmg: 15, speed: 0.8, size: 11 });
+        items.push({ x: 130, y: 190, type: 'potion', val: 1 });
+        items.push({ x: 200, y: 120, type: 'reagent', val: 3 });
+    } else if (secIdx === 2) {
+        // Sealed Laboratories
+        player.x = 40; player.y = 40;
+        enemies.push({ x: 120, y: 120, type: 'cultist', hp: 60, maxHp: 60, dmg: 18, speed: 1.0, size: 11 });
+        enemies.push({ x: 220, y: 100, type: 'crawler', hp: 55, maxHp: 55, dmg: 16, speed: 1.5, size: 10 });
+        enemies.push({ x: 180, y: 180, type: 'drone', hp: 45, maxHp: 45, dmg: 14, speed: 1.3, size: 10 });
+        items.push({ x: 260, y: 60, type: 'gold', val: 100 });
+        items.push({ x: 100, y: 200, type: 'reagent', val: 5 });
+    } else if (secIdx === 3) {
+        // The Overclocked Core (Boss Arena)
+        player.x = 40; player.y = 120;
+        // Boss: Goliath-IX Boiler Automaton
+        enemies.push({ 
+            x: 240, y: 120, type: 'boss', 
+            hp: 300, maxHp: 300, dmg: 25, speed: 0.9, size: 22,
+            phase: 1
+        });
+        playSound('boss');
+    }
+    updateHUD();
+}
+
+// Start New Game with Class Selection
+function startGame(classType) {
+    player.classType = classType;
+    if (classType === 'Vanguard') {
+        player.maxHp = 120; player.hp = 120;
+        player.weaponName = 'Piston Blade'; player.weaponDmg = 18; player.armor = 8; player.speed = 1.8;
+    } else if (classType === 'Scout') {
+        player.maxHp = 90; player.hp = 90;
+        player.weaponName = 'Kinetic Dart-Thrower'; player.weaponDmg = 14; player.armor = 4; player.speed = 2.4;
+    } else if (classType === 'Mage') {
+        player.maxHp: 80; player.hp = 80;
+        player.weaponName = 'Plasma Conduit'; player.weaponDmg = 22; player.armor = 2; player.speed = 2.0;
+    }
+    player.level = 1; player.xp = 0; player.gold = 50; player.reagents = 2; player.potions = 3;
+    
+    document.getElementById('hud-top').style.display = 'flex';
+    document.getElementById('hud-bottom').style.display = 'flex';
+    hideModal();
+    gameState = 'PLAYING';
+    loadSector(0);
+}
+
+// UI Modals
+function showModal(title, text, htmlActions) {
+    document.getElementById('msg-title').innerText = title;
+    document.getElementById('msg-text').innerHTML = text;
+    document.getElementById('msg-actions').innerHTML = htmlActions;
+    document.getElementById('screen-message').style.display = 'block';
+}
+function hideModal() {
+    document.getElementById('screen-message').style.display = 'none';
+}
+
+function showTitleScreen() {
+    gameState = 'TITLE';
+    document.getElementById('hud-top').style.display = 'none';
+    document.getElementById('hud-bottom').style.display = 'none';
+    showModal(
+        "THE LAST REACTOR",
+        "Gothic Industrial Fantasy Demake<br><br>Explore the decaying vertical city of Aethelgard, operate alchemical valves, battle rogue automata, and reach the Overclocked Core.",
+        `<button class="menu-btn" onclick="showClassSelect()">Start Expedition</button>`
+    );
+}
+
+function showClassSelect() {
+    showModal(
+        "CHOOSE ARCHETYPE",
+        "Select your operative class for the descent into Aethelgard:",
+        `<button class="menu-btn" onclick="startGame('Vanguard')">Alchemical Vanguard (Tank)</button><br>
+         <button class="menu-btn" onclick="startGame('Scout')">Ether Scout (Agile)</button><br>
+         <button class="menu-btn" onclick="startGame('Mage')">Resonance Mage (Caster)</button>`
+    );
+}
+
+function openInventory() {
+    gameState = 'INVENTORY';
+    showModal(
+        "OPERATIVE INVENTORY",
+        `<b>Class:</b> ${player.classType}<br>
+         <b>Weapon:</b> ${player.weaponName} (Dmg: ${player.weaponDmg})<br>
+         <b>Armor:</b> ${player.armor}<br>
+         <b>Potions:</b> ${player.potions} (Press Q to use)<br>
+         <b>Gold:</b> ${player.gold} | <b>Reagents:</b> ${player.reagents}`,
+        `<button class="menu-btn" onclick="closeModal()">Resume</button>`
+    );
+}
+
+function openAlchemyMenu() {
+    gameState = 'ALCHEMY';
+    showModal(
+        "ALCHEMICAL WORKBENCH",
+        `Refine reagents into power upgrades.<br>Current Reagents: <span class="highlight">${player.reagents}</span>`,
+        `<button class="menu-btn" onclick="craftUpgrade('potion')">Brew Potion (2 Reagents)</button><br>
+         <button class="menu-btn" onclick="craftUpgrade('weapon')">Enhance Weapon (+5 Dmg, 4 Reagents)</button><br>
+         <button class="menu-btn" onclick="closeModal()">Close</button>`
+    );
+}
+
+function craftUpgrade(type) {
+    if (type === 'potion' && player.reagents >= 2) {
+        player.reagents -= 2;
+        player.potions++;
+        playSound('pickup');
+        alert("Brewed 1 Alchemical Potion!");
+    } else if (type === 'weapon' && player.reagents >= 4) {
+        player.reagents -= 4;
+        player.weaponDmg += 5;
+        playSound('pickup');
+        alert("Enhanced Weapon Damage to " + player.weaponDmg + "!");
+    } else {
+        alert("Insufficient alchemical reagents!");
+    }
+    openAlchemyMenu();
+}
+
+function closeModal() {
+    hideModal();
+    gameState = 'PLAYING';
+}
+
+function usePotion() {
+    if (player.potions > 0 && player.hp < player.maxHp) {
+        player.potions--;
+        player.hp = Math.min(player.maxHp, player.hp + 50);
+        playSound('pickup');
+        updateHUD();
+    }
+}
+
+// Player Actions
+function playerAttack() {
+    if (gameState !== 'PLAYING') return;
+    playSound('attack');
+    
+    // Attack visual slash particles
+    particles.push({ x: player.x + 10, y: player.y, life: 10, color: '#e69542' });
+
+    // Check hit against enemies
+    enemies.forEach(en => {
+        let dist = Math.hypot(player.x - en.x, player.y - en.y);
+        if (dist < 32) {
+            en.hp -= player.weaponDmg;
+            playSound('hit');
+            // Knockback
+            en.x += (en.x - player.x) * 0.4;
+            en.y += (en.y - player.y) * 0.4;
+            
+            if (en.hp <= 0) {
+                player.xp += 25;
+                player.gold += 15;
+                if (Math.random() < 0.6) player.reagents++;
+                checkLevelUp();
+            }
+        }
+    });
+
+    // Clean dead enemies
+    enemies = enemies.filter(en => {
+        if (en.hp <= 0 && en.type === 'boss') {
+            bossDefeated = true;
+            triggerVictory();
+        }
+        return en.hp > 0;
+    });
+    updateHUD();
+}
+
+function playerInteract() {
+    if (gameState !== 'PLAYING') return;
+    
+    // Check environmental objects
+    environmentalObjects.forEach(obj => {
+        let dist = Math.hypot(player.x - obj.x, player.y - obj.y);
+        if (dist < 28) {
+            obj.state = !obj.state;
+            playSound('valve');
+            if (obj.type === 'valve') {
+                valveOpen = obj.state;
+                document.getElementById('hud-valve').innerText = valveOpen ? 'Vented (Open)' : 'Locked';
+                if (valveOpen) {
+                    // Open nearby door automatically when valve is turned
+                    environmentalObjects.forEach(o => { if (o.type === 'door') o.state = true; });
+                }
+            } else if (obj.type === 'door' && obj.state) {
+                // Advance sector if door is open
+                if (currentSector < 3) {
+                    loadSector(currentSector + 1);
+                }
+            }
+        }
+    });
+}
+
+function checkLevelUp() {
+    if (player.xp >= player.level * 100) {
+        player.level++;
+        player.maxHp += 20;
+        player.hp = player.maxHp;
+        playSound('pickup');
+        alert("Level Up! You reached Level " + player.level + "!");
+    }
+}
+
+function updateHUD() {
+    document.getElementById('hud-hp').innerText = `${Math.max(0, player.hp)}/${player.maxHp}`;
+    document.getElementById('hud-sector').innerText = sectorNames[currentSector];
+    document.getElementById('hud-gold').innerText = player.gold;
+    document.getElementById('hud-reagents').innerText = player.reagents;
+    document.getElementById('hud-level').innerText = player.level;
+    document.getElementById('hud-xp').innerText = player.xp;
+    document.getElementById('hud-weapon').innerText = `${player.weaponName} (${player.weaponDmg})`;
+}
+
+function triggerGameOver() {
+    gameState = 'GAMEOVER';
+    document.getElementById('hud-top').style.display = 'none';
+    document.getElementById('hud-bottom').style.display = 'none';
+    showModal(
+        "OPERATIVE TERMINATED",
+        "The automated defenses and alchemical hazards of Aethelgard overwhelmed you.",
+        `<button class="menu-btn" onclick="showTitleScreen()">Return to Title</button>`
+    );
+}
+
+function triggerVictory() {
+    gameState = 'VICTORY';
+    document.getElementById('hud-top').style.display = 'none';
+    document.getElementById('hud-bottom').style.display = 'none';
+    showModal(
+        "REACTOR STABILIZED",
+        "You defeated Goliath-IX, re-routed the primary alchemical conduits, and saved Aethelgard from total meltdown!",
+        `<button class="menu-btn" onclick="showTitleScreen()">Play Again</button>`
+    );
+}
+
+// Game Loop Update & Render
+function update() {
+    if (gameState !== 'PLAYING') return;
+
+    // Movement handling
+    let dx = 0, dy = 0;
+    if (keys['arrowleft'] || keys['a']) { dx = -1; player.facing = 'left'; }
+    if (keys['arrowright'] || keys['d']) { dx = 1; player.facing = 'right'; }
+    if (keys['arrowup'] || keys['w']) { dy = -1; player.facing = 'up'; }
+    if (keys['arrowdown'] || keys['s']) { dy = 1; player.facing = 'down'; }
+
+    if (dx !== 0 || dy !== 0) {
+        let len = Math.hypot(dx, dy);
+        player.x += (dx / len) * player.speed;
+        player.y += (dy / len) * player.speed;
+
+        // Boundaries
+        player.x = Math.max(16, Math.min(canvas.width - 16, player.x));
+        player.y = Math.max(16, Math.min(canvas.height - 16, player.y));
+    }
+
+    // Item pickups
+    items = items.filter(it => {
+        let dist = Math.hypot(player.x - it.x, player.y - it.y);
+        if (dist < 16) {
+            playSound('pickup');
+            if (it.type === 'gold') player.gold += it.val;
+            if (it.type === 'reagent') player.reagents += it.val;
+            if (it.type === 'potion') player.potions++;
+            updateHUD();
+            return false;
+        }
+        return true;
+    });
+
+    // Enemy AI & Combat
+    enemies.forEach(en => {
+        let dist = Math.hypot(player.x - en.x, player.y - en.y);
+        
+        if (en.type === 'crawler') {
+            // Melee rush towards player
+            if (dist > 10) {
+                en.x += (player.x - en.x) / dist * en.speed;
+                en.y += (player.y - en.y) / dist * en.speed;
+            }
+        } else if (en.type === 'drone') {
+            // Floating drone circles / approaches
+            if (dist > 50) {
+                en.x += (player.x - en.x) / dist * en.speed;
+                en.y += (player.y - en.y) / dist * en.speed;
+            }
+        } else if (en.type === 'cultist') {
+            // Caster maintains distance
+            if (dist < 80) {
+                en.x -= (player.x - en.x) / dist * (en.speed * 0.8);
+                en.y -= (player.y - en.y) / dist * (en.speed * 0.8);
+            } else if (dist > 110) {
+                en.x += (player.x - en.x) / dist * en.speed;
+                en.y += (player.y - en.y) / dist * en.speed;
+            }
+        } else if (en.type === 'boss') {
+            // Boss movement and periodic steam pulse attack
+            if (dist > 30) {
+                en.x += (player.x - en.x) / dist * en.speed;
+                en.y += (player.y - en.y) / dist * en.speed;
+            }
+            if (Math.random() < 0.02) {
+                playSound('hit');
+                player.hp -= en.dmg;
+                if (player.hp <= 0) triggerGameOver();
+                updateHUD();
+            }
+        }
+
+        // Contact damage with enemies
+        if (dist < 14) {
+            player.hp -= 0.5;
+            if (player.hp <= 0) triggerGameOver();
+            updateHUD();
+        }
+    });
+}
+
+function render() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (gameState !== 'PLAYING') return;
+
+    // Render Gothic Industrial Background (Floor tiles & pipe grids)
+    ctx.strokeStyle = '#232a35';
+    ctx.lineWidth = 1;
+    for (let x = 0; x < canvas.width; x += 32) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+    }
+    for (let y = 0; y < canvas.height; y += 32) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+    }
+
+    // Render Environmental Objects (Valves & Doors)
+    environmentalObjects.forEach(obj => {
+        ctx.fillStyle = obj.state ? '#5cb85c' : '#d9534f';
+        ctx.fillRect(obj.x - 8, obj.y - 8, 16, 16);
+        ctx.strokeStyle = '#fff';
+        ctx.strokeRect(obj.x - 8, obj.y - 8, 16, 16);
+        
+        ctx.fillStyle = '#c5cbd3';
+        ctx.font = '8px Courier New';
+        ctx.fillText(obj.state ? 'OPEN' : 'LOCKED', obj.x - 16, obj.y - 12);
+    });
+
+    // Render Items
+    items.forEach(it => {
+        ctx.fillStyle = it.type === 'gold' ? '#f0ad4e' : (it.type === 'reagent' ? '#5bc0de' : '#d9534f');
+        ctx.beginPath();
+        ctx.arc(it.x, it.y, 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.stroke();
+    });
+
+    // Render Enemies
+    enemies.forEach(en => {
+        ctx.fillStyle = en.type === 'boss' ? '#d9534f' : (en.type === 'crawler' ? '#b87333' : (en.type === 'drone' ? '#5bc0de' : '#8854d0'));
+        ctx.beginPath();
+        ctx.arc(en.x, en.y, en.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#000';
+        ctx.stroke();
+
+        // Enemy HP bar
+        let barW = en.size * 2;
+        ctx.fillStyle = '#000';
+        ctx.fillRect(en.x - barW/2, en.y - en.size - 6, barW, 3);
+        ctx.fillStyle = '#5cb85c';
+        ctx.fillRect(en.x - barW/2, en.y - en.size - 6, barW * (en.hp / en.maxHp), 3);
+    });
+
+    // Render Player
+    ctx.fillStyle = player.classType === 'Vanguard' ? '#e69542' : (player.classType === 'Scout' ? '#5bc0de' : '#a66bee');
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, player.size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Render Particles
+    particles = particles.filter(p => {
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x, p.y, 3, 3);
+        p.life--;
+        return p.life > 0;
+    });
+}
+
+function gameLoop() {
+    update();
+    render();
+    requestAnimationFrame(gameLoop);
+}
+
+// Initialize on load
+showTitleScreen();
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>
